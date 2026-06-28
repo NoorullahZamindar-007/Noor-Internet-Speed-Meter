@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <p class="eyebrow">Internet Speed Test</p>
+        <h1>Noor Internet Speed Meter</h1>
+        <p class="intro">Measure download, upload, ping, and the selected test server.</p>
+
+        <button id="startButton" type="button">Start Speed Test</button>
+
+        <div class="progress-wrap" aria-label="Speed test progress">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <p id="statusText" class="status">Ready to test your connection.</p>
+        <p id="timeText" class="time-note">A full test usually takes 60-120 seconds.</p>
+        <p id="errorBox" class="error" hidden></p>
+
+        <div class="results" aria-live="polite">
+          <article class="card">
+            <span>Download Mbps</span>
+            <strong id="downloadResult">--</strong>
+          </article>
+          <article class="card">
+            <span>Upload Mbps</span>
+            <strong id="uploadResult">--</strong>
+          </article>
+          <article class="card">
+            <span>Ping ms</span>
+            <strong id="pingResult">--</strong>
+          </article>
+          <article class="card server-card">
+            <span>Server</span>
+            <strong id="serverResult">--</strong>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', path='/js/app.js') }}"></script>
+  </body>
+</html>
