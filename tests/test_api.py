@@ -36,6 +36,6 @@ def test_start_speedtest(monkeypatch) -> None:
 
 
 def test_unknown_speedtest_id_returns_404() -> None:
-    response = client.get("/api/speedtest/status/not-a-real-id")
+    response = client.get("/api/speedtest/status/not-a-real-id") 
 
     assert response.status_code == 404
