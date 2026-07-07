@@ -18,7 +18,7 @@ def test_start_speedtest(monkeypatch) -> None:
         if progress_callback:
             progress_callback(100)
         return {
-            "download_mbps": 50.25,
+            "download_mbps": 50.25,  
             "upload_mbps": 12.75,
             "ping_ms": 23.5,
             "server_name": "Example Server",
