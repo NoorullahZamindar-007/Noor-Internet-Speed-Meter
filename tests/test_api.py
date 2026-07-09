@@ -31,7 +31,7 @@ def test_start_speedtest(monkeypatch) -> None:
 
     assert response.status_code == 200
     data = response.json()
-    assert data["test_id"] 
+    assert data["test_id"]  
     assert data["status"] == "started"
 
 
