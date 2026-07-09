@@ -23,7 +23,7 @@ def test_start_speedtest(monkeypatch) -> None:
             "ping_ms": 23.5,
             "server_name": "Example Server",
             "server_location": "City, Country",
-        }
+        } 
 
     monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
 
