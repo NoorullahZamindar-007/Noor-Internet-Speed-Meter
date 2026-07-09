@@ -20,7 +20,7 @@ def test_start_speedtest(monkeypatch) -> None:
         return {
             "download_mbps": 50.25,  
             "upload_mbps": 12.75,
-            "ping_ms": 23.5,
+            "ping_ms": 23.5, 
             "server_name": "Example Server",
             "server_location": "City, Country",
         } 
