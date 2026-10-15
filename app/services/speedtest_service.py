@@ -7,7 +7,8 @@ import speedtest
 
 
 def _mbps(bits_per_second: float) -> float:
-    return round(bits_per_second / 1024 / 1024, 2)
+    # Mbps = megabits per second; speedtest-cli returns bits per second.
+    return round(bits_per_second / 1_000_000, 2)
 
 
 def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> dict[str, Any]:
