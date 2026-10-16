@@ -39,3 +39,17 @@ def test_unknown_speedtest_id_returns_404() -> None:
     response = client.get("/api/speedtest/status/not-a-real-id") 
 
     assert response.status_code == 404
+
+
+def test_speedtest_history_is_capped(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 3)
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+
+    ids = [client.post("/api/speedtest/start").json()["test_id"] for _ in range(5)]
+    assert len(main_module.speed_tests) == 3
+    # The two oldest records were evicted.
+    assert ids[0] not in main_module.speed_tests
+    assert ids[1] not in main_module.speed_tests
+    assert client.get(f"/api/speedtest/status/{ids[0]}").status_code == 404

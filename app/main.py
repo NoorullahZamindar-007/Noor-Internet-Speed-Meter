@@ -25,6 +25,9 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 executor = ThreadPoolExecutor(max_workers=2)
 speed_tests: dict[str, dict[str, Any]] = {}
 speed_tests_lock = Lock()
+# The in-memory history is never persisted, so cap it to avoid unbounded
+# memory growth on a long-running server.
+MAX_STORED_TESTS = 100
 
 
 def _update_test(test_id: str, **changes: Any) -> None:
@@ -74,6 +77,9 @@ def start_speedtest() -> dict[str, str]:
             "result": None,
             "error": None,
         }
+        # Dicts preserve insertion order: drop the oldest records first.
+        while len(speed_tests) > MAX_STORED_TESTS:
+            speed_tests.pop(next(iter(speed_tests)))
 
     executor.submit(_run_speed_test_job, test_id)
     return {"test_id": test_id, "status": "started"}
