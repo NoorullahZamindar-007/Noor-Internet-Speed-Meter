@@ -28,6 +28,11 @@ speed_tests_lock = Lock()
 # The in-memory history is never persisted, so cap it to avoid unbounded
 # memory growth on a long-running server.
 MAX_STORED_TESTS = 100
+# The executor has max_workers=2; this bounds how many tests may be queued or
+# running at once so rapid-fire start requests cannot pile up indefinitely.
+# The history-cap test posts 5 at a time, so keep the default comfortably above that.
+MAX_ACTIVE_TESTS = 8
+ACTIVE_STATUSES = {"pending", "running"}
 
 
 def _update_test(test_id: str, **changes: Any) -> None:
@@ -68,8 +73,16 @@ def health() -> dict[str, str]:
 
 @app.post("/api/speedtest/start", response_model=SpeedTestStartResponse)
 def start_speedtest() -> dict[str, str]:
-    test_id = str(uuid4())
     with speed_tests_lock:
+        active = sum(
+            1 for test in speed_tests.values() if test["status"] in ACTIVE_STATUSES
+        )
+        if active >= MAX_ACTIVE_TESTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many active speed tests. Wait for one to finish and retry.",
+            )
+        test_id = str(uuid4())
         speed_tests[test_id] = {
             "test_id": test_id,
             "status": "pending",

@@ -53,3 +53,24 @@ def test_speedtest_history_is_capped(monkeypatch) -> None:
     assert ids[0] not in main_module.speed_tests
     assert ids[1] not in main_module.speed_tests
     assert client.get(f"/api/speedtest/status/{ids[0]}").status_code == 404
+
+
+def test_start_returns_429_when_active_tests_full(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_ACTIVE_TESTS", 2)
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 100)
+    main_module.speed_tests.clear()
+    try:
+        main_module.speed_tests["running-1"] = {
+            "test_id": "running-1", "status": "running", "progress": 50,
+            "result": None, "error": None,
+        }
+        main_module.speed_tests["pending-1"] = {
+            "test_id": "pending-1", "status": "pending", "progress": 0,
+            "result": None, "error": None,
+        }
+        response = client.post("/api/speedtest/start")
+        assert response.status_code == 429
+    finally:
+        main_module.speed_tests.clear()
