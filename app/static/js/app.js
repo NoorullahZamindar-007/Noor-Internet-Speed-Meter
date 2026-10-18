@@ -83,7 +83,18 @@ startButton.addEventListener("click", async () => {
   try {
     const response = await fetch("/api/speedtest/start", { method: "POST" });
     if (!response.ok) {
-      throw new Error("Could not start speed test.");
+      // Surface the server's reason (e.g. the 429 "too many active tests"
+      // message) instead of a generic failure notice.
+      let message = "Could not start speed test.";
+      try {
+        const errBody = await response.json();
+        if (errBody && typeof errBody.detail === "string" && errBody.detail) {
+          message = errBody.detail;
+        }
+      } catch (_) {
+        // Non-JSON error body: keep the generic message.
+      }
+      throw new Error(message);
     }
 
     const data = await response.json();
