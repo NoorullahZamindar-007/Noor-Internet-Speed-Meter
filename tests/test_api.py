@@ -44,8 +44,21 @@ def test_unknown_speedtest_id_returns_404() -> None:
 def test_speedtest_history_is_capped(monkeypatch) -> None:
     import app.main as main_module
 
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
     monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 3)
-    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+    # Run jobs inline so they finish; only finished records are evicted.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
 
     ids = [client.post("/api/speedtest/start").json()["test_id"] for _ in range(5)]
     assert len(main_module.speed_tests) == 3
@@ -72,5 +85,32 @@ def test_start_returns_429_when_active_tests_full(monkeypatch) -> None:
         }
         response = client.post("/api/speedtest/start")
         assert response.status_code == 429
+    finally:
+        main_module.speed_tests.clear()
+
+
+def test_history_eviction_preserves_active_tests(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 3)
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+    main_module.speed_tests.clear()
+    try:
+        main_module.speed_tests["old-completed"] = {
+            "test_id": "old-completed", "status": "completed", "progress": 100,
+            "result": None, "error": None,
+        }
+        main_module.speed_tests["active-running"] = {
+            "test_id": "active-running", "status": "running", "progress": 50,
+            "result": None, "error": None,
+        }
+        client.post("/api/speedtest/start")
+        client.post("/api/speedtest/start")
+        assert len(main_module.speed_tests) == 3
+        # The finished record was evicted, but the in-flight test's record
+        # survives so its background job can keep updating it.
+        assert "old-completed" not in main_module.speed_tests
+        assert "active-running" in main_module.speed_tests
+        assert client.get("/api/speedtest/status/active-running").status_code == 200
     finally:
         main_module.speed_tests.clear()

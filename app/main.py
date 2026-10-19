@@ -40,6 +40,23 @@ def _update_test(test_id: str, **changes: Any) -> None:
         speed_tests[test_id].update(changes)
 
 
+def _evict_old_tests() -> None:
+    """Drop the oldest stored records, never evicting an active test.
+
+    Caller must hold speed_tests_lock. Evicting a pending/running test
+    would make the background job's _update_test() raise KeyError on its
+    next progress update, so active tests are skipped; if everything left
+    is active, eviction stops instead of breaking an in-flight test.
+    """
+    while len(speed_tests) > MAX_STORED_TESTS:
+        for test_id, test in speed_tests.items():
+            if test["status"] not in ACTIVE_STATUSES:
+                del speed_tests[test_id]
+                break
+        else:
+            break
+
+
 def _run_speed_test_job(test_id: str) -> None:
     try:
         _update_test(test_id, status="running", progress=10)
@@ -90,9 +107,9 @@ def start_speedtest() -> dict[str, str]:
             "result": None,
             "error": None,
         }
-        # Dicts preserve insertion order: drop the oldest records first.
-        while len(speed_tests) > MAX_STORED_TESTS:
-            speed_tests.pop(next(iter(speed_tests)))
+        # Dicts preserve insertion order: drop the oldest records first,
+        # but never evict an active test (see _evict_old_tests).
+        _evict_old_tests()
 
     executor.submit(_run_speed_test_job, test_id)
     return {"test_id": test_id, "status": "started"}
