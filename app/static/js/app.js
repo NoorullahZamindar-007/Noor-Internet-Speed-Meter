@@ -99,7 +99,18 @@ startButton.addEventListener("click", async () => {
 
     const data = await response.json();
     statusText.textContent = "Speed test running...";
+    // Guard against a wedged worker or a stale test id: stop polling after
+    // ten minutes instead of hitting the status endpoint forever.
+    const POLL_TIMEOUT_MS = 10 * 60 * 1000;
+    const pollDeadline = Date.now() + POLL_TIMEOUT_MS;
     pollTimer = setInterval(() => {
+      if (Date.now() > pollDeadline) {
+        errorBox.textContent = "The speed test is taking too long. Please try again.";
+        errorBox.hidden = false;
+        statusText.textContent = "Speed test timed out.";
+        finish();
+        return;
+      }
       pollStatus(data.test_id).catch((error) => {
         errorBox.textContent = error.message;
         errorBox.hidden = false;
