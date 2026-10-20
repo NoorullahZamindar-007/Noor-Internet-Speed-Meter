@@ -1,6 +1,6 @@
 # Noor Internet Speed Meter
 
-Noor Internet Speed Meter is a FastAPI web app for checking internet download speed, upload speed, ping, and the selected test server. It replaces the old Tkinter desktop interface while keeping `internet_speedtest.py` in the repository for reference.
+Noor Internet Speed Meter is a FastAPI web app for checking internet download speed, upload speed, ping, and the selected test server, replacing the earlier Tkinter desktop interface.
 
 ## Features
  
@@ -25,7 +25,6 @@ app/
     js/app.js
 tests/
   test_api.py
-internet_speedtest.py
 main.py
 requirements.txt
 README.md
