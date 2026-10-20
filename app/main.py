@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -18,11 +19,22 @@ from app.services.speedtest_service import run_speed_test
 APP_NAME = "Noor Internet Speed Meter"
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title=APP_NAME)
+executor = ThreadPoolExecutor(max_workers=2)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    yield
+    # Release the pool's threads on shutdown so reloads/restarts do not
+    # leak threads or delay worker exit.
+    executor.shutdown(wait=False, cancel_futures=True)
+
+
+app = FastAPI(title=APP_NAME, lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
-executor = ThreadPoolExecutor(max_workers=2)
+
 speed_tests: dict[str, dict[str, Any]] = {}
 speed_tests_lock = Lock()
 # The in-memory history is never persisted, so cap it to avoid unbounded
