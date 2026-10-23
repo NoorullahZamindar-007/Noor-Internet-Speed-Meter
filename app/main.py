@@ -44,6 +44,9 @@ MAX_STORED_TESTS = 100
 # running at once so rapid-fire start requests cannot pile up indefinitely.
 # The history-cap test posts 5 at a time, so keep the default comfortably above that.
 MAX_ACTIVE_TESTS = 8
+# Seconds a rejected client should wait before retrying; sent as the
+# Retry-After header on 429 responses (RFC 7231 §7.1.3).
+RETRY_AFTER_SECONDS = 30
 ACTIVE_STATUSES = {"pending", "running"}
 
 
@@ -110,6 +113,9 @@ def start_speedtest() -> dict[str, str]:
             raise HTTPException(
                 status_code=429,
                 detail="Too many active speed tests. Wait for one to finish and retry.",
+                # Tell the client when it may retry instead of leaving it
+                # to poll the endpoint blindly (RFC 7231 §7.1.3).
+                headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
             )
         test_id = str(uuid4())
         speed_tests[test_id] = {

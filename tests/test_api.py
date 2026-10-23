@@ -89,6 +89,29 @@ def test_start_returns_429_when_active_tests_full(monkeypatch) -> None:
         main_module.speed_tests.clear()
 
 
+def test_429_response_includes_retry_after(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_ACTIVE_TESTS", 2)
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 100)
+    main_module.speed_tests.clear()
+    try:
+        main_module.speed_tests["running-1"] = {
+            "test_id": "running-1", "status": "running", "progress": 50,
+            "result": None, "error": None,
+        }
+        main_module.speed_tests["pending-1"] = {
+            "test_id": "pending-1", "status": "pending", "progress": 0,
+            "result": None, "error": None,
+        }
+        response = client.post("/api/speedtest/start")
+        assert response.status_code == 429
+        # The client should be told when it may retry (RFC 7231 §7.1.3).
+        assert response.headers["retry-after"] == "30"
+    finally:
+        main_module.speed_tests.clear()
+
+
 def test_history_eviction_preserves_active_tests(monkeypatch) -> None:
     import app.main as main_module
 
