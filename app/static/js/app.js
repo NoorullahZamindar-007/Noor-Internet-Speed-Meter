@@ -99,6 +99,12 @@ startButton.addEventListener("click", async () => {
       } catch (_) {
         // Non-JSON error body: keep the generic message.
       }
+      // The server may send a Retry-After hint (RFC 7231 §7.1.3): tell the
+      // user when it is worth trying again instead of retrying blindly.
+      const retrySeconds = Number.parseInt(response.headers.get("retry-after") ?? "", 10);
+      if (Number.isFinite(retrySeconds) && retrySeconds > 0) {
+        message += ` Please try again in about ${retrySeconds} seconds.`;
+      }
       throw new Error(message);
     }
 
