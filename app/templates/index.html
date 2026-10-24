@@ -15,10 +15,10 @@
 
         <button id="startButton" type="button">Start Speed Test</button>
 
-        <div class="progress-wrap" aria-label="Speed test progress">
+        <div id="progressWrap" class="progress-wrap" role="progressbar" aria-label="Speed test progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="progressBar" class="progress-bar"></div>
         </div>
-        <p id="statusText" class="status">Ready to test your connection.</p>
+        <p id="statusText" class="status" aria-live="polite">Ready to test your connection.</p>
         <p id="timeText" class="time-note">A full test usually takes 60-120 seconds.</p>
         <p id="errorBox" class="error" role="alert" hidden></p>
 

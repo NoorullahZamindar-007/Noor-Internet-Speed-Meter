@@ -41,6 +41,22 @@ def test_unknown_speedtest_id_returns_404() -> None:
     assert response.status_code == 404
 
 
+def test_home_exposes_progressbar_and_live_status_for_assistive_tech() -> None:
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.text
+    # The progress track must identify as a progressbar with a valid range so
+    # screen readers can report it, not just see a generic div.
+    assert 'role="progressbar"' in html
+    assert 'aria-valuemin="0"' in html
+    assert 'aria-valuemax="100"' in html
+    assert 'aria-valuenow="0"' in html
+    # Status changes (running/completed/failed) should be announced.
+    assert 'id="statusText"' in html
+    assert 'aria-live="polite"' in html
+
+
 def test_speedtest_history_is_capped(monkeypatch) -> None:
     import app.main as main_module
 

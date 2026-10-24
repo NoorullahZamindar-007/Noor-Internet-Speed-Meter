@@ -1,4 +1,5 @@
 const startButton = document.getElementById("startButton");
+const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
 const statusText = document.getElementById("statusText");
 const timeText = document.getElementById("timeText");
@@ -13,7 +14,11 @@ let elapsedTimer = null;
 let startedAt = null;
 
 function setProgress(progress) {
-  progressBar.style.width = `${progress}%`;
+  // Keep the visual bar and the ARIA value in sync so assistive technology
+  // can report progress; clamp to guard against out-of-range values.
+  const clamped = Math.max(0, Math.min(100, Math.round(progress)));
+  progressBar.style.width = `${clamped}%`;
+  progressWrap.setAttribute("aria-valuenow", String(clamped));
 }
 
 function resetResults() {
