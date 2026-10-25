@@ -26,7 +26,14 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
 
         progress(75)
         upload_mbps = _mbps(st.upload())
-        ping_ms = round(float(st.results.ping), 2)
+        # get_best_server() can return None and results.ping can be None
+        # when no server answers; both used to crash here with a bare
+        # TypeError inside the generic wrapper instead of a usable result.
+        # Ping falls back to 0.0 (not None) because the API schema and the
+        # frontend both expect a number here.
+        best_server = best_server or {}
+        ping = st.results.ping
+        ping_ms = round(float(ping), 2) if ping is not None else 0.0
 
         server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
         server_location = ", ".join(
