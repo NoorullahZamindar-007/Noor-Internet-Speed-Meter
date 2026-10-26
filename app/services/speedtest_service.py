@@ -6,9 +6,18 @@ from typing import Any
 import speedtest
 
 
-def _mbps(bits_per_second: float) -> float:
+def _mbps(bits_per_second: float | None) -> float:
     # Mbps = megabits per second; speedtest-cli returns bits per second.
-    return round(bits_per_second / 1_000_000, 2)
+    # A failed measurement can come back as None (or a non-numeric value);
+    # that used to fail the whole test with a TypeError instead of
+    # reporting a 0 Mbps measurement alongside the other results.
+    try:
+        value = float(bits_per_second) if bits_per_second is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+    if value != value or value in (float("inf"), float("-inf")):
+        return 0.0
+    return round(value / 1_000_000, 2)
 
 
 def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> dict[str, Any]:
@@ -33,7 +42,10 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
         # frontend both expect a number here.
         best_server = best_server or {}
         ping = st.results.ping
-        ping_ms = round(float(ping), 2) if ping is not None else 0.0
+        try:
+            ping_ms = round(float(ping), 2) if ping is not None else 0.0
+        except (TypeError, ValueError):
+            ping_ms = 0.0
 
         server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
         server_location = ", ".join(
