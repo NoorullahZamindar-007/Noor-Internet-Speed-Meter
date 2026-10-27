@@ -57,3 +57,26 @@ def test_missing_or_bad_speeds_fall_back_to_zero():
     assert result["upload_mbps"] == 0.0
     assert result["ping_ms"] == 0.0
     assert result["server_name"] == "Test ISP"
+
+
+def test_negative_and_non_finite_measurements_clamp_to_zero():
+    # Negative bitrates/ping are not measurements, and NaN survives
+    # float()/round() — all three used to reach the API as-is.
+    result = _install_fake_speedtest(
+        best_server={"sponsor": "Test ISP", "name": "Kabul", "country": "AF"},
+        ping=float("nan"),
+        download=-10_000_000,
+        upload=-5_000_000,
+    )
+
+    assert result["download_mbps"] == 0.0
+    assert result["upload_mbps"] == 0.0
+    assert result["ping_ms"] == 0.0
+
+    result = _install_fake_speedtest(
+        best_server={"sponsor": "Test ISP", "name": "Kabul", "country": "AF"},
+        ping=-12.5,
+    )
+
+    assert result["ping_ms"] == 0.0
+    assert result["download_mbps"] == 50.0

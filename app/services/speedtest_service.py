@@ -17,7 +17,9 @@ def _mbps(bits_per_second: float | None) -> float:
         return 0.0
     if value != value or value in (float("inf"), float("-inf")):
         return 0.0
-    return round(value / 1_000_000, 2)
+    # A negative bitrate is not a measurement; clamp it instead of
+    # reporting a nonsensical negative Mbps to the API and frontend.
+    return round(max(value, 0.0) / 1_000_000, 2)
 
 
 def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> dict[str, Any]:
@@ -45,6 +47,11 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
         try:
             ping_ms = round(float(ping), 2) if ping is not None else 0.0
         except (TypeError, ValueError):
+            ping_ms = 0.0
+        # NaN survives float()/round() above, and a negative ping is
+        # not a measurement; either would otherwise reach the API
+        # schema (and the frontend's toFixed) as an invalid value.
+        if ping_ms != ping_ms or ping_ms < 0:
             ping_ms = 0.0
 
         server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
