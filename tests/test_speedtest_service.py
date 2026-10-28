@@ -80,3 +80,15 @@ def test_negative_and_non_finite_measurements_clamp_to_zero():
 
     assert result["ping_ms"] == 0.0
     assert result["download_mbps"] == 50.0
+
+
+def test_infinite_ping_clamps_to_zero():
+    # Download/upload already clamped non-finite values, but ping only
+    # handled NaN/negative: an infinite ping used to reach the API as-is.
+    result = _install_fake_speedtest(
+        best_server={"sponsor": "Test ISP", "name": "Kabul", "country": "AF"},
+        ping=float("inf"),
+    )
+
+    assert result["ping_ms"] == 0.0
+    assert result["download_mbps"] == 50.0

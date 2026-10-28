@@ -48,10 +48,12 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
             ping_ms = round(float(ping), 2) if ping is not None else 0.0
         except (TypeError, ValueError):
             ping_ms = 0.0
-        # NaN survives float()/round() above, and a negative ping is
-        # not a measurement; either would otherwise reach the API
-        # schema (and the frontend's toFixed) as an invalid value.
-        if ping_ms != ping_ms or ping_ms < 0:
+        # NaN survives float()/round() above, a negative ping is not a
+        # measurement, and +inf survives too: unlike download/upload,
+        # ping was never checked for infinity, so an infinite ping
+        # reached the API (and the frontend's toFixed) as an invalid
+        # value instead of falling back to 0.0 like the other metrics.
+        if ping_ms != ping_ms or ping_ms in (float("inf"), float("-inf")) or ping_ms < 0:
             ping_ms = 0.0
 
         server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
