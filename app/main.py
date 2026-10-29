@@ -129,7 +129,19 @@ def start_speedtest() -> dict[str, str]:
         # but never evict an active test (see _evict_old_tests).
         _evict_old_tests()
 
-    executor.submit(_run_speed_test_job, test_id)
+    try:
+        executor.submit(_run_speed_test_job, test_id)
+    except RuntimeError:
+        # Pool shut down (e.g. during reload/restart): drop the record
+        # instead of leaving it "pending" forever — pending counts toward
+        # MAX_ACTIVE_TESTS and is never evicted, so it would permanently
+        # consume one active slot and one history slot.
+        with speed_tests_lock:
+            speed_tests.pop(test_id, None)
+        raise HTTPException(
+            status_code=503,
+            detail="Speed test service is shutting down. Please try again.",
+        )
     return {"test_id": test_id, "status": "started"}
 
 
