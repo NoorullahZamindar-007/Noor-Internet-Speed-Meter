@@ -28,11 +28,26 @@ def _install_fake_speedtest(best_server, ping, download=50_000_000, upload=10_00
             return upload
 
     fake.Speedtest = FakeSpeedtest
+    # Restore both modules afterwards: leaving the fake installed would
+    # silently make any later test file import the stub instead of the
+    # real speedtest library, depending on test-file ordering.
+    real_speedtest = sys.modules.get("speedtest")
+    real_service = sys.modules.get("app.services.speedtest_service")
     sys.modules["speedtest"] = fake
     sys.modules.pop("app.services.speedtest_service", None)
-    from app.services.speedtest_service import run_speed_test
+    try:
+        from app.services.speedtest_service import run_speed_test
 
-    return run_speed_test()
+        return run_speed_test()
+    finally:
+        if real_speedtest is None:
+            sys.modules.pop("speedtest", None)
+        else:
+            sys.modules["speedtest"] = real_speedtest
+        if real_service is None:
+            sys.modules.pop("app.services.speedtest_service", None)
+        else:
+            sys.modules["app.services.speedtest_service"] = real_service
 
 
 def test_missing_server_and_ping_fall_back_to_unknown_and_zero():
