@@ -12,6 +12,12 @@ const serverResult = document.getElementById("serverResult");
 let pollTimer = null;
 let elapsedTimer = null;
 let startedAt = null;
+// Guards against overlapping polls: setInterval does not wait for the
+// previous fetch, so without these a slow connection lets responses
+// resolve out of order (rewinding the progress bar) and lets a poll
+// already in flight overwrite the timeout/finish message when it lands.
+let pollInFlight = false;
+let pollingActive = false;
 
 function setProgress(progress) {
   // Keep the visual bar and the ARIA value in sync so assistive technology
@@ -33,6 +39,7 @@ function resetResults() {
 }
 
 function finish() {
+  pollingActive = false;
   startButton.disabled = false;
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -53,7 +60,11 @@ function startElapsedTimer() {
 }
 
 async function pollStatus(testId) {
+  if (pollInFlight || !pollingActive) return;
+  pollInFlight = true;
+  try {
   const response = await fetch(`/api/speedtest/status/${testId}`);
+  if (!pollingActive) return;
   if (!response.ok) {
     throw new Error("Could not read speed test status.");
   }
@@ -76,6 +87,9 @@ async function pollStatus(testId) {
     errorBox.hidden = false;
     statusText.textContent = "Speed test failed.";
     finish();
+  }
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -114,6 +128,7 @@ startButton.addEventListener("click", async () => {
     // ten minutes instead of hitting the status endpoint forever.
     const POLL_TIMEOUT_MS = 10 * 60 * 1000;
     const pollDeadline = Date.now() + POLL_TIMEOUT_MS;
+    pollingActive = true;
     pollTimer = setInterval(() => {
       if (Date.now() > pollDeadline) {
         errorBox.textContent = "The speed test is taking too long. Please try again.";
