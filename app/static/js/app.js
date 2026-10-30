@@ -74,12 +74,22 @@ async function pollStatus(testId) {
   statusText.textContent = `Status: ${data.status}`;
 
   if (data.status === "completed") {
-    downloadResult.textContent = data.result.download_mbps.toFixed(2);
-    uploadResult.textContent = data.result.upload_mbps.toFixed(2);
-    pingResult.textContent = data.result.ping_ms.toFixed(2);
-    serverResult.textContent = `${data.result.server_name} (${data.result.server_location})`;
-    statusText.textContent = "Speed test completed.";
-    finish();
+    // A completed record must carry a result; without this guard a
+    // null result throws on .toFixed below, finish() never runs, and
+    // the poll timer keeps crashing on the same status until timeout.
+    if (!data.result) {
+      errorBox.textContent = "Speed test completed but returned no result. Please try again.";
+      errorBox.hidden = false;
+      statusText.textContent = "Speed test failed.";
+      finish();
+    } else {
+      downloadResult.textContent = data.result.download_mbps.toFixed(2);
+      uploadResult.textContent = data.result.upload_mbps.toFixed(2);
+      pingResult.textContent = data.result.ping_ms.toFixed(2);
+      serverResult.textContent = `${data.result.server_name} (${data.result.server_location})`;
+      statusText.textContent = "Speed test completed.";
+      finish();
+    }
   }
 
   if (data.status === "failed") {
