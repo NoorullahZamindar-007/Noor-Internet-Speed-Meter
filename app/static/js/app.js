@@ -21,10 +21,22 @@ let pollingActive = false;
 
 function setProgress(progress) {
   // Keep the visual bar and the ARIA value in sync so assistive technology
-  // can report progress; clamp to guard against out-of-range values.
-  const clamped = Math.max(0, Math.min(100, Math.round(progress)));
+  // can report progress; clamp to guard against out-of-range values, and
+  // fall back to 0 for a missing/non-numeric value — without this,
+  // Math.round(undefined) is NaN and the bar's width becomes "NaN%".
+  const value = Number(progress);
+  const clamped = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
   progressBar.style.width = `${clamped}%`;
   progressWrap.setAttribute("aria-valuenow", String(clamped));
+}
+
+// Format one result metric: a missing or non-numeric value (e.g. a
+// malformed status payload) used to throw on .toFixed below, aborting
+// the poll with a generic error even though the test had completed.
+function fmtMetric(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(2) : "--";
 }
 
 function resetResults() {
@@ -83,9 +95,9 @@ async function pollStatus(testId) {
       statusText.textContent = "Speed test failed.";
       finish();
     } else {
-      downloadResult.textContent = data.result.download_mbps.toFixed(2);
-      uploadResult.textContent = data.result.upload_mbps.toFixed(2);
-      pingResult.textContent = data.result.ping_ms.toFixed(2);
+      downloadResult.textContent = fmtMetric(data.result.download_mbps);
+      uploadResult.textContent = fmtMetric(data.result.upload_mbps);
+      pingResult.textContent = fmtMetric(data.result.ping_ms);
       serverResult.textContent = `${data.result.server_name} (${data.result.server_location})`;
       statusText.textContent = "Speed test completed.";
       finish();
