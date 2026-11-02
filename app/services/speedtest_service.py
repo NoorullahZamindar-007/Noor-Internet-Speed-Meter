@@ -41,8 +41,9 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
         # when no server answers; both used to crash here with a bare
         # TypeError inside the generic wrapper instead of a usable result.
         # Ping falls back to 0.0 (not None) because the API schema and the
-        # frontend both expect a number here.
-        best_server = best_server or {}
+        # frontend both expect a number here. A non-dict server value
+        # would likewise crash on .get below, so it falls back too.
+        best_server = best_server if isinstance(best_server, dict) else {}
         ping = st.results.ping
         try:
             ping_ms = round(float(ping), 2) if ping is not None else 0.0
