@@ -98,7 +98,12 @@ async function pollStatus(testId) {
       downloadResult.textContent = fmtMetric(data.result.download_mbps);
       uploadResult.textContent = fmtMetric(data.result.upload_mbps);
       pingResult.textContent = fmtMetric(data.result.ping_ms);
-      serverResult.textContent = `${data.result.server_name} (${data.result.server_location})`;
+      // The metrics above already guard missing values, but the server
+      // fields did not: a completed payload without them rendered as
+      // "undefined (undefined)". Fall back to "Unknown" like the API does.
+      const serverName = data.result.server_name || "Unknown";
+      const serverLocation = data.result.server_location || "Unknown";
+      serverResult.textContent = `${serverName} (${serverLocation})`;
       statusText.textContent = "Speed test completed.";
       finish();
     }
