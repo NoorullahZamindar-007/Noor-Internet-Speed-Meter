@@ -107,3 +107,16 @@ def test_infinite_ping_clamps_to_zero():
 
     assert result["ping_ms"] == 0.0
     assert result["download_mbps"] == 50.0
+
+
+def test_location_does_not_repeat_server_name_when_sponsor_missing():
+    # Without a sponsor, server_name falls back to the server's name, so
+    # the old location ("Kabul, AF") repeated it in the frontend's
+    # "Kabul (Kabul, AF)" rendering; only the country remains.
+    result = _install_fake_speedtest(
+        best_server={"name": "Kabul", "country": "AF"},
+        ping=12.0,
+    )
+
+    assert result["server_name"] == "Kabul"
+    assert result["server_location"] == "AF"

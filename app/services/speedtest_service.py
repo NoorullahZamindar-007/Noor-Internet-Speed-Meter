@@ -58,8 +58,13 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
             ping_ms = 0.0
 
         server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
+        # When no sponsor is reported, server_name already is the server's
+        # name; repeating it in the location ("Kabul (Kabul, AF)") is
+        # redundant, so drop any location part that duplicates it.
         server_location = ", ".join(
-            part for part in [best_server.get("name"), best_server.get("country")] if part
+            part
+            for part in [best_server.get("name"), best_server.get("country")]
+            if part and part != server_name
         )
 
         return {
