@@ -75,10 +75,25 @@ async function pollStatus(testId) {
   if (pollInFlight || !pollingActive) return;
   pollInFlight = true;
   try {
-  const response = await fetch(`/api/speedtest/status/${testId}`);
+  let response;
+  try {
+    response = await fetch(`/api/speedtest/status/${testId}`);
+  } catch (_) {
+    // A momentary network blip (a dropped Wi-Fi second, a 502/503)
+    // must not kill the whole test: the server keeps running, so
+    // just let the next 1 s tick retry. The 10-minute poll deadline
+    // still bounds a wedged test.
+    return;
+  }
   if (!pollingActive) return;
+  if (response.status === 404) {
+    // The record is gone (a server restart wipes the in-memory
+    // store, or it was evicted past the history cap): retrying
+    // cannot help, so stop with a specific message.
+    throw new Error("That speed test is no longer available — the server may have restarted. Please start a new test.");
+  }
   if (!response.ok) {
-    throw new Error("Could not read speed test status.");
+    return;
   }
 
   const data = await response.json();
