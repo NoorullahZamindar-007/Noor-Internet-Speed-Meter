@@ -120,3 +120,17 @@ def test_location_does_not_repeat_server_name_when_sponsor_missing():
 
     assert result["server_name"] == "Kabul"
     assert result["server_location"] == "AF"
+
+
+def test_non_string_server_fields_are_coerced_not_crashed():
+    # A malformed server list can report numeric name/country values;
+    # those used to crash str.join and fail a test whose measurements
+    # had all succeeded.
+    result = _install_fake_speedtest(
+        best_server={"sponsor": 123, "name": 456, "country": 789},
+        ping=12.0,
+    )
+
+    assert result["server_name"] == "123"
+    assert result["server_location"] == "456, 789"
+    assert result["download_mbps"] == 50.0

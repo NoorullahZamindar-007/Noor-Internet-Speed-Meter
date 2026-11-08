@@ -1,6 +1,19 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _clear_speed_tests():
+    # Tests share the module-global speed_tests store; without this a
+    # test asserting on initial/empty state can see records left by an
+    # earlier test, depending on order or on running a subset.
+    import app.main as main_module
+
+    main_module.speed_tests.clear()
+    yield
+    main_module.speed_tests.clear()
 
 
 client = TestClient(app)  

@@ -22,6 +22,15 @@ def _mbps(bits_per_second: float | None) -> float:
     return round(max(value, 0.0) / 1_000_000, 2)
 
 
+def _server_text(value: Any) -> str:
+    # Server-list entries are not guaranteed to carry strings: a numeric
+    # name or country used to crash str.join with TypeError below and
+    # fail a test whose measurements had all succeeded.
+    if not value:
+        return ""
+    return str(value).strip()
+
+
 def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> dict[str, Any]:
     def progress(value: int) -> None:
         if progress_callback:
@@ -57,13 +66,13 @@ def run_speed_test(progress_callback: Callable[[int], None] | None = None) -> di
         if ping_ms != ping_ms or ping_ms in (float("inf"), float("-inf")) or ping_ms < 0:
             ping_ms = 0.0
 
-        server_name = best_server.get("sponsor") or best_server.get("name") or "Unknown"
+        server_name = _server_text(best_server.get("sponsor")) or _server_text(best_server.get("name")) or "Unknown"
         # When no sponsor is reported, server_name already is the server's
         # name; repeating it in the location ("Kabul (Kabul, AF)") is
         # redundant, so drop any location part that duplicates it.
         server_location = ", ".join(
             part
-            for part in [best_server.get("name"), best_server.get("country")]
+            for part in [_server_text(best_server.get("name")), _server_text(best_server.get("country"))]
             if part and part != server_name
         )
 
