@@ -18,6 +18,13 @@ let startedAt = null;
 // already in flight overwrite the timeout/finish message when it lands.
 let pollInFlight = false;
 let pollingActive = false;
+// Consecutive non-OK status responses (404 fails fast above, so this is
+// 500s and friends): a deterministic server error used to be swallowed
+// on every 1 s tick, leaving the user staring at a frozen "running" bar
+// for the full 10-minute poll deadline. Fail after a few in a row so
+// the existing .catch shows a clear message instead.
+let consecutivePollErrors = 0;
+const MAX_CONSECUTIVE_POLL_ERRORS = 5;
 
 function setProgress(progress) {
   // Keep the visual bar and the ARIA value in sync so assistive technology
@@ -93,8 +100,16 @@ async function pollStatus(testId) {
     throw new Error("That speed test is no longer available — the server may have restarted. Please start a new test.");
   }
   if (!response.ok) {
+    // A single failure may be transient (the server is mid-restart, a
+    // proxy hiccup), so keep retrying; several in a row mean the error
+    // is deterministic and the next ticks cannot help either.
+    consecutivePollErrors += 1;
+    if (consecutivePollErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+      throw new Error("The server keeps reporting an error for this test. Please try again.");
+    }
     return;
   }
+  consecutivePollErrors = 0;
 
   const data = await response.json();
   setProgress(data.progress);
@@ -171,6 +186,7 @@ startButton.addEventListener("click", async () => {
     const POLL_TIMEOUT_MS = 10 * 60 * 1000;
     const pollDeadline = Date.now() + POLL_TIMEOUT_MS;
     pollingActive = true;
+    consecutivePollErrors = 0;
     pollTimer = setInterval(() => {
       if (Date.now() > pollDeadline) {
         errorBox.textContent = "The speed test is taking too long. Please try again.";

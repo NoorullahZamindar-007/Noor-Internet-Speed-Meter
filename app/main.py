@@ -42,8 +42,11 @@ speed_tests_lock = Lock()
 MAX_STORED_TESTS = 100
 # The executor has max_workers=2; this bounds how many tests may be queued or
 # running at once so rapid-fire start requests cannot pile up indefinitely.
-# The history-cap test posts 5 at a time, so keep the default comfortably above that.
-MAX_ACTIVE_TESTS = 8
+# Kept at 4 (2 running + 2 queued): with 8 active tests the last one could
+# wait behind ~3 sequential batches of 60-120 s tests plus its own run,
+# reaching the frontend's 10-minute poll deadline even though nothing
+# failed. At 4 the worst case is about 6 minutes including the run.
+MAX_ACTIVE_TESTS = 4
 # Seconds a rejected client should wait before retrying; sent as the
 # Retry-After header on 429 responses (RFC 7231 §7.1.3).
 RETRY_AFTER_SECONDS = 30
