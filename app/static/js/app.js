@@ -82,6 +82,14 @@ async function pollStatus(testId) {
   if (pollInFlight || !pollingActive) return;
   pollInFlight = true;
   try {
+  // Count one transient poll failure; give up after several in a row so
+  // a deterministic server error still fails fast with a clear message.
+  function noteTransientPollError() {
+    consecutivePollErrors += 1;
+    if (consecutivePollErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+      throw new Error("The server keeps reporting an error for this test. Please try again.");
+    }
+  }
   let response;
   try {
     response = await fetch(`/api/speedtest/status/${testId}`);
@@ -103,15 +111,29 @@ async function pollStatus(testId) {
     // A single failure may be transient (the server is mid-restart, a
     // proxy hiccup), so keep retrying; several in a row mean the error
     // is deterministic and the next ticks cannot help either.
-    consecutivePollErrors += 1;
-    if (consecutivePollErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
-      throw new Error("The server keeps reporting an error for this test. Please try again.");
-    }
+    noteTransientPollError();
     return;
   }
   consecutivePollErrors = 0;
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    // A malformed body (a proxy error page, a truncated response) used
+    // to throw out of here and kill the whole poll via the interval's
+    // .catch, even though the test was still running fine server-side.
+    // Treat it like any other transient poll failure instead.
+    noteTransientPollError();
+    return;
+  }
+  if (!data || typeof data !== "object" || !["pending", "running", "completed", "failed"].includes(data.status)) {
+    // A well-formed body with an unusable shape (a JSON string from a
+    // proxy, or a status this client does not know): same treatment —
+    // one bad tick must not end a healthy test.
+    noteTransientPollError();
+    return;
+  }
   setProgress(data.progress);
   statusText.textContent = `Status: ${data.status}`;
 
