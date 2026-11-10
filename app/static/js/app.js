@@ -202,6 +202,13 @@ startButton.addEventListener("click", async () => {
     }
 
     const data = await response.json();
+    // A 200 with a malformed body (a proxy error page parsed as JSON,
+    // or a payload without a test id) used to send the poll to
+    // /api/speedtest/status/undefined, which 404s with the misleading
+    // "server may have restarted" message. Fail here instead.
+    if (!data || typeof data.test_id !== "string" || !data.test_id) {
+      throw new Error("Could not start speed test.");
+    }
     statusText.textContent = "Speed test running...";
     // Guard against a wedged worker or a stale test id: stop polling after
     // ten minutes instead of hitting the status endpoint forever.
