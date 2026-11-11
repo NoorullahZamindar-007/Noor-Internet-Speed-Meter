@@ -66,7 +66,7 @@ http://127.0.0.1:8000
 
 ## How It Works
 
-The app creates a speed test job with a UUID, stores its status in memory, and runs the blocking `speedtest-cli` work in a thread. The browser polls the status endpoint once per second until the job completes or fails.
+The app creates a speed test job with a UUID, stores its status in memory, and runs the blocking `speedtest-cli` work in a thread. The browser polls the status endpoint once per second until the job completes or fails. Results are kept in memory only (capped at 100 tests) and are lost when the server restarts.
 
 Progress values are updated at these points:
 
@@ -92,6 +92,6 @@ The tests mock the speed test function, so they do not use your network connecti
 
 ## Future Improvements
 
-- Store speed test history
+- Persist speed test history across restarts
 - Add a cancel button
 - Add charts for repeated tests

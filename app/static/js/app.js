@@ -25,6 +25,15 @@ let pollingActive = false;
 // the existing .catch shows a clear message instead.
 let consecutivePollErrors = 0;
 const MAX_CONSECUTIVE_POLL_ERRORS = 5;
+// Consecutive network-level fetch failures (connection refused, dropped
+// Wi-Fi): unlike HTTP 500s these never counted toward the error limit
+// above, so a dead server left the user staring at a frozen "running"
+// bar for the full 10-minute poll deadline — even though a server
+// restart also wipes the in-memory record, so the test can never
+// recover. The limit is deliberately much larger than 5: a brief
+// Wi-Fi blip must not kill a healthy 2-minute test.
+let consecutiveFetchFailures = 0;
+const MAX_CONSECUTIVE_FETCH_FAILURES = 30;
 
 function setProgress(progress) {
   // Keep the visual bar and the ARIA value in sync so assistive technology
@@ -96,10 +105,17 @@ async function pollStatus(testId) {
   } catch (_) {
     // A momentary network blip (a dropped Wi-Fi second, a 502/503)
     // must not kill the whole test: the server keeps running, so
-    // just let the next 1 s tick retry. The 10-minute poll deadline
-    // still bounds a wedged test.
+    // just let the next 1 s tick retry. But a server that is gone
+    // for good (restart, network down) fails fast after ~30 s
+    // instead of hanging until the 10-minute poll deadline.
+    consecutiveFetchFailures += 1;
+    if (consecutiveFetchFailures >= MAX_CONSECUTIVE_FETCH_FAILURES) {
+      throw new Error("The server keeps reporting an error for this test. Please try again.");
+    }
     return;
   }
+  // Any response at all means the server is reachable again.
+  consecutiveFetchFailures = 0;
   if (!pollingActive) return;
   if (response.status === 404) {
     // The record is gone (a server restart wipes the in-memory
@@ -216,6 +232,7 @@ startButton.addEventListener("click", async () => {
     const pollDeadline = Date.now() + POLL_TIMEOUT_MS;
     pollingActive = true;
     consecutivePollErrors = 0;
+    consecutiveFetchFailures = 0;
     pollTimer = setInterval(() => {
       if (Date.now() > pollDeadline) {
         errorBox.textContent = "The speed test is taking too long. Please try again.";
