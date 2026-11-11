@@ -48,6 +48,37 @@ def test_start_speedtest(monkeypatch) -> None:
     assert data["status"] == "started"
 
 
+def test_start_then_status_completes(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    response = client.get(f"/api/speedtest/status/{test_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["progress"] == 100
+    assert data["result"]["download_mbps"] == 50.25
+    assert data["result"]["upload_mbps"] == 12.75
+    assert data["result"]["ping_ms"] == 23.5
+
+
 def test_unknown_speedtest_id_returns_404() -> None: 
     response = client.get("/api/speedtest/status/not-a-real-id") 
 
