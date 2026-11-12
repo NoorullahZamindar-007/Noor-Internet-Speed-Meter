@@ -252,6 +252,9 @@ startButton.addEventListener("click", async () => {
     errorBox.textContent = error.message;
     errorBox.hidden = false;
     statusText.textContent = "Unable to start speed test.";
+    // The elapsed timer started before the POST; without this the stale
+    // "Elapsed time: N seconds..." line stays under the error message.
+    timeText.textContent = "A full test usually takes 60-120 seconds.";
     finish();
   }
 });

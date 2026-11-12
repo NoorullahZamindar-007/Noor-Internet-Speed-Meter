@@ -51,6 +51,12 @@ MAX_ACTIVE_TESTS = 4
 # Retry-After header on 429 responses (RFC 7231 §7.1.3).
 RETRY_AFTER_SECONDS = 30
 ACTIVE_STATUSES = {"pending", "running"}
+# A speed test normally takes 60-120 s and the frontend stops polling
+# after 10 minutes, but nothing bounded the server-side run: a hung test
+# stayed pending/running forever, and active records are never evicted,
+# so it permanently consumed one of the MAX_ACTIVE_TESTS slots. 300 s
+# sits inside the frontend's 10-minute poll deadline.
+SPEED_TEST_TIMEOUT_SECONDS = 300
 
 
 def _update_test(test_id: str, **changes: Any) -> None:
@@ -78,9 +84,23 @@ def _evict_old_tests() -> None:
 def _run_speed_test_job(test_id: str) -> None:
     try:
         _update_test(test_id, status="running", progress=10)
-        result = run_speed_test(
-            progress_callback=lambda progress: _update_test(test_id, progress=progress)
-        )
+        # Run the test on its own single-worker pool so a hung run can be
+        # abandoned: future.result(timeout=...) only returns control to us,
+        # it does not stop the thread, so the pool is shut down without
+        # waiting and the orphan thread finishes on its own.
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(
+                run_speed_test,
+                progress_callback=lambda progress: _update_test(test_id, progress=progress),
+            )
+            try:
+                result = future.result(timeout=SPEED_TEST_TIMEOUT_SECONDS)
+            except TimeoutError:
+                _update_test(test_id, status="failed", error="Speed test timed out.")
+                return
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
         _update_test(
             test_id,
             status="completed",

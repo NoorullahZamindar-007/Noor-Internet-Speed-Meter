@@ -79,6 +79,55 @@ def test_start_then_status_completes(monkeypatch) -> None:
     assert data["result"]["ping_ms"] == 23.5
 
 
+def test_failed_speedtest_is_reported_with_its_error(monkeypatch) -> None:
+    import app.main as main_module
+
+    # Every API test used a succeeding fake, so the except branch that
+    # lands a failed run with its error had zero coverage.
+    def fake_run_speed_test(progress_callback=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    response = client.get(f"/api/speedtest/status/{test_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert data["error"] == "boom"
+
+
+def test_hung_speedtest_fails_after_timeout(monkeypatch) -> None:
+    import time
+
+    import app.main as main_module
+
+    # Nothing bounded how long run_speed_test could block, so a hung run
+    # stayed pending/running forever and permanently consumed an active
+    # slot. The job must fail it once the watchdog fires.
+    def fake_run_speed_test(progress_callback=None):
+        time.sleep(0.5)
+        return {"download_mbps": 1.0, "upload_mbps": 1.0, "ping_ms": 1.0}
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    monkeypatch.setattr(main_module, "SPEED_TEST_TIMEOUT_SECONDS", 0.05)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    response = client.get(f"/api/speedtest/status/{test_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert data["error"] == "Speed test timed out."
+
+
 def test_unknown_speedtest_id_returns_404() -> None: 
     response = client.get("/api/speedtest/status/not-a-real-id") 
 
