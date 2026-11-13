@@ -246,3 +246,86 @@ def test_history_eviction_preserves_active_tests(monkeypatch) -> None:
         assert client.get("/api/speedtest/status/active-running").status_code == 200
     finally:
         main_module.speed_tests.clear()
+
+
+def test_cancel_pending_speedtest_returns_cancelled(monkeypatch) -> None:
+    import app.main as main_module
+
+    # The job never runs (executor mocked to a no-op): cancelling a
+    # pending test must still land it as cancelled, not leave it pending.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    response = client.post(f"/api/speedtest/cancel/{test_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "cancelled"
+    assert data["error"] == "Cancelled by user."
+    assert client.get(f"/api/speedtest/status/{test_id}").json()["status"] == "cancelled"
+
+
+def test_cancel_unknown_speedtest_returns_404() -> None:
+    response = client.post("/api/speedtest/cancel/not-a-real-id")
+
+    assert response.status_code == 404
+
+
+def test_cancel_completed_speedtest_returns_409(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we cancel.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+    assert client.get(f"/api/speedtest/status/{test_id}").json()["status"] == "completed"
+
+    response = client.post(f"/api/speedtest/cancel/{test_id}")
+
+    assert response.status_code == 409
+    assert "already completed" in response.json()["detail"]
+
+
+def test_cancelled_test_is_not_overwritten_by_late_job_update(monkeypatch) -> None:
+    import app.main as main_module
+
+    # The background thread cannot be stopped, so a job that starts
+    # after the cancel (or was already running) must not resurrect the
+    # record as "running" and then "completed".
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+    assert client.post(f"/api/speedtest/cancel/{test_id}").status_code == 200
+
+    # The queued job finally runs — after the cancel.
+    main_module._run_speed_test_job(test_id)
+
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["status"] == "cancelled"
+    assert data["error"] == "Cancelled by user."
+    assert data["result"] is None

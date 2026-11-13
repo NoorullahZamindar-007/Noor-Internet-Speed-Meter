@@ -6,6 +6,7 @@ Noor Internet Speed Meter is a FastAPI web app for checking internet download sp
  
 - FastAPI backend with a simple web interface
 - Background speed tests so requests do not block
+- Cancel a running speed test from the page
 - Live progress polling from the browser
 - Download, upload, ping, and server result cards
 - Basic API tests that do not run a real speed test
@@ -62,6 +63,7 @@ http://127.0.0.1:8000
 | GET | `/` | Main web page |
 | GET | `/api/health` | Health check |
 | POST | `/api/speedtest/start` | Start a background speed test |
+| POST | `/api/speedtest/cancel/{test_id}` | Cancel a pending or running speed test |
 | GET | `/api/speedtest/status/{test_id}` | Read speed test status |
 
 ## How It Works
@@ -93,5 +95,4 @@ The tests mock the speed test function, so they do not use your network connecti
 ## Future Improvements
 
 - Persist speed test history across restarts
-- Add a cancel button
 - Add charts for repeated tests

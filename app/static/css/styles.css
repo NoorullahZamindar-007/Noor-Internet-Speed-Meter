@@ -79,6 +79,27 @@ button:disabled {
   opacity: 0.65;
 }
 
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cancel-button {
+  background: var(--panel);
+  color: var(--error);
+  border: 1px solid #f4b8b0;
+}
+
+.cancel-button:hover {
+  background: #fff1ef;
+}
+
+.cancel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .progress-wrap {
   height: 14px;
   margin: 28px 0 10px;

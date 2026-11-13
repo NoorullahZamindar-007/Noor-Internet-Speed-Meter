@@ -1,4 +1,5 @@
 const startButton = document.getElementById("startButton");
+const cancelButton = document.getElementById("cancelButton");
 const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
 const statusText = document.getElementById("statusText");
@@ -12,6 +13,9 @@ const serverResult = document.getElementById("serverResult");
 let pollTimer = null;
 let elapsedTimer = null;
 let startedAt = null;
+// The test currently being polled, so the Cancel button knows which
+// test to cancel; cleared by finish() alongside the timers.
+let currentTestId = null;
 // Guards against overlapping polls: setInterval does not wait for the
 // previous fetch, so without these a slow connection lets responses
 // resolve out of order (rewinding the progress bar) and lets a poll
@@ -69,6 +73,8 @@ function resetResults() {
 function finish() {
   pollingActive = false;
   startButton.disabled = false;
+  cancelButton.disabled = true;
+  currentTestId = null;
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
@@ -143,7 +149,7 @@ async function pollStatus(testId) {
     noteTransientPollError();
     return;
   }
-  if (!data || typeof data !== "object" || !["pending", "running", "completed", "failed"].includes(data.status)) {
+  if (!data || typeof data !== "object" || !["pending", "running", "completed", "failed", "cancelled"].includes(data.status)) {
     // A well-formed body with an unusable shape (a JSON string from a
     // proxy, or a status this client does not know): same treatment —
     // one bad tick must not end a healthy test.
@@ -183,10 +189,35 @@ async function pollStatus(testId) {
     statusText.textContent = "Speed test failed.";
     finish();
   }
+
+  if (data.status === "cancelled") {
+    // The user cancelled from another tab, or the cancel request
+    // landed after this poll started: stop polling with the same
+    // message the cancel button shows, not an error.
+    statusText.textContent = "Speed test cancelled.";
+    finish();
+  }
   } finally {
     pollInFlight = false;
   }
 }
+
+cancelButton.addEventListener("click", async () => {
+  if (!currentTestId) return;
+  try {
+    const response = await fetch(`/api/speedtest/cancel/${currentTestId}`, { method: "POST" });
+    if (!response.ok) {
+      // Already finished, failed, or gone: the poll resolves the real
+      // state on its next tick, so there is nothing to show here.
+      return;
+    }
+    statusText.textContent = "Speed test cancelled.";
+    finish();
+  } catch (_) {
+    // The cancel request itself failed (network down): leave the poll
+    // running — the test finishes on its own and the poll reports it.
+  }
+});
 
 startButton.addEventListener("click", async () => {
   resetResults();
@@ -226,6 +257,8 @@ startButton.addEventListener("click", async () => {
       throw new Error("Could not start speed test.");
     }
     statusText.textContent = "Speed test running...";
+    currentTestId = data.test_id;
+    cancelButton.disabled = false;
     // Guard against a wedged worker or a stale test id: stop polling after
     // ten minutes instead of hitting the status endpoint forever.
     const POLL_TIMEOUT_MS = 10 * 60 * 1000;

@@ -20,7 +20,7 @@ class SpeedTestStartResponse(BaseModel):
 
 class SpeedTestStatus(BaseModel):
     test_id: str
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "cancelled"]
     progress: int
     result: SpeedTestResult | None = None
     error: str | None = None

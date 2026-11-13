@@ -13,7 +13,10 @@
         <h1>Noor Internet Speed Meter</h1>
         <p class="intro">Measure download, upload, ping, and the selected test server.</p>
 
-        <button id="startButton" type="button">Start Speed Test</button>
+        <div class="actions">
+          <button id="startButton" type="button">Start Speed Test</button>
+          <button id="cancelButton" type="button" class="cancel-button" disabled>Cancel Test</button>
+        </div>
 
         <div id="progressWrap" class="progress-wrap" role="progressbar" aria-label="Speed test progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="progressBar" class="progress-bar"></div>

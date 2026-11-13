@@ -37,6 +37,13 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 speed_tests: dict[str, dict[str, Any]] = {}
 speed_tests_lock = Lock()
+# Tests the user cancelled: the background job may still be running (its
+# thread cannot be stopped), so its later _update_test() calls must be
+# ignored instead of overwriting the cancelled record with "running" or
+# "completed". The id stays here for the record's lifetime; eviction
+# drops the record, and a cancelled record is never active, so the set
+# entry is harmless if it outlives the record.
+cancelled_tests: set[str] = set()
 # The in-memory history is never persisted, so cap it to avoid unbounded
 # memory growth on a long-running server.
 MAX_STORED_TESTS = 100
@@ -61,6 +68,12 @@ SPEED_TEST_TIMEOUT_SECONDS = 300
 
 def _update_test(test_id: str, **changes: Any) -> None:
     with speed_tests_lock:
+        # A cancelled test stays cancelled: the background job's thread
+        # cannot be stopped, so without this its next progress update
+        # would resurrect the record as "running" (and eventually
+        # "completed") after the user cancelled it.
+        if test_id in cancelled_tests:
+            return
         speed_tests[test_id].update(changes)
 
 
@@ -82,6 +95,11 @@ def _evict_old_tests() -> None:
 
 
 def _run_speed_test_job(test_id: str) -> None:
+    # Cancelled while still queued behind the executor's two workers:
+    # do not start a speed test nobody is waiting for.
+    with speed_tests_lock:
+        if test_id in cancelled_tests:
+            return
     try:
         _update_test(test_id, status="running", progress=10)
         # Run the test on its own single-worker pool so a hung run can be
@@ -166,6 +184,29 @@ def start_speedtest() -> dict[str, str]:
             detail="Speed test service is shutting down. Please try again.",
         )
     return {"test_id": test_id, "status": "started"}
+
+
+@app.post("/api/speedtest/cancel/{test_id}", response_model=SpeedTestStatus)
+def cancel_speedtest(test_id: str) -> dict[str, Any]:
+    # A test takes 60-120 s and the frontend polls for up to 10 minutes;
+    # until now there was no way to stop one short of its timeout. The
+    # background thread cannot be killed, so cancelling marks the record
+    # and the job's later updates are ignored (see _update_test); a
+    # queued job never starts (see _run_speed_test_job). A finished test
+    # cannot be cancelled: 409, not a silent no-op, so the client knows
+    # the result it already has stands.
+    with speed_tests_lock:
+        test = speed_tests.get(test_id)
+        if test is None:
+            raise HTTPException(status_code=404, detail="Speed test not found")
+        if test["status"] not in ACTIVE_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Speed test is already {test['status']} and cannot be cancelled.",
+            )
+        cancelled_tests.add(test_id)
+        test.update(status="cancelled", progress=test["progress"], error="Cancelled by user.")
+        return dict(test)
 
 
 @app.get("/api/speedtest/status/{test_id}", response_model=SpeedTestStatus)
