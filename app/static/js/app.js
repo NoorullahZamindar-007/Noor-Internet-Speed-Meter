@@ -114,9 +114,13 @@ async function pollStatus(testId) {
     // just let the next 1 s tick retry. But a server that is gone
     // for good (restart, network down) fails fast after ~30 s
     // instead of hanging until the 10-minute poll deadline.
+    // Say the server is unreachable here, not that it "keeps
+    // reporting an error": the fetch itself failed, so the server
+    // reported nothing — the old wording sent users looking for a
+    // server-side problem when their connection was the issue.
     consecutiveFetchFailures += 1;
     if (consecutiveFetchFailures >= MAX_CONSECUTIVE_FETCH_FAILURES) {
-      throw new Error("The server keeps reporting an error for this test. Please try again.");
+      throw new Error("Could not reach the server. Check your connection and try again.");
     }
     return;
   }
