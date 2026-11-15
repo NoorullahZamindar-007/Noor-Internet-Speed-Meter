@@ -40,9 +40,9 @@ speed_tests_lock = Lock()
 # Tests the user cancelled: the background job may still be running (its
 # thread cannot be stopped), so its later _update_test() calls must be
 # ignored instead of overwriting the cancelled record with "running" or
-# "completed". The id stays here for the record's lifetime; eviction
-# drops the record, and a cancelled record is never active, so the set
-# entry is harmless if it outlives the record.
+# "completed". The id is dropped again when the record is evicted (see
+# _evict_old_tests): without that, every cancelled test left its id in
+# this set forever, a slow leak on a long-running server.
 cancelled_tests: set[str] = set()
 # The in-memory history is never persisted, so cap it to avoid unbounded
 # memory growth on a long-running server.
@@ -74,7 +74,14 @@ def _update_test(test_id: str, **changes: Any) -> None:
         # "completed") after the user cancelled it.
         if test_id in cancelled_tests:
             return
-        speed_tests[test_id].update(changes)
+        # The record may have been evicted after the job's last check
+        # (a cancelled record is inactive, so it is evictable while its
+        # thread is still running): ignore the update instead of
+        # raising KeyError out of the background thread.
+        test = speed_tests.get(test_id)
+        if test is None:
+            return
+        test.update(changes)
 
 
 def _evict_old_tests() -> None:
@@ -89,6 +96,13 @@ def _evict_old_tests() -> None:
         for test_id, test in speed_tests.items():
             if test["status"] not in ACTIVE_STATUSES:
                 del speed_tests[test_id]
+                # The record is gone, so its cancelled marker must go
+                # too: _update_test() uses this set to ignore a
+                # cancelled job's late updates, and once the record is
+                # evicted there is nothing left to protect — keeping
+                # the id would leak one entry per cancelled test for
+                # the life of the server.
+                cancelled_tests.discard(test_id)
                 break
         else:
             break
@@ -96,9 +110,13 @@ def _evict_old_tests() -> None:
 
 def _run_speed_test_job(test_id: str) -> None:
     # Cancelled while still queued behind the executor's two workers:
-    # do not start a speed test nobody is waiting for.
+    # do not start a speed test nobody is waiting for. The same goes
+    # for a record that was evicted while queued (only a cancelled
+    # record can be evicted while its job is still pending): without
+    # this, pruning the cancelled marker on eviction would let the job
+    # run a full test whose result has nowhere to go.
     with speed_tests_lock:
-        if test_id in cancelled_tests:
+        if test_id in cancelled_tests or test_id not in speed_tests:
             return
     try:
         _update_test(test_id, status="running", progress=10)

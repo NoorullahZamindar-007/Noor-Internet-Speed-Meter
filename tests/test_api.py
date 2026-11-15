@@ -12,8 +12,10 @@ def _clear_speed_tests():
     import app.main as main_module
 
     main_module.speed_tests.clear()
+    main_module.cancelled_tests.clear()
     yield
     main_module.speed_tests.clear()
+    main_module.cancelled_tests.clear()
 
 
 client = TestClient(app)  
@@ -329,3 +331,57 @@ def test_cancelled_test_is_not_overwritten_by_late_job_update(monkeypatch) -> No
     assert data["status"] == "cancelled"
     assert data["error"] == "Cancelled by user."
     assert data["result"] is None
+
+
+def test_evicted_cancelled_test_is_pruned_from_cancelled_set(monkeypatch) -> None:
+    import app.main as main_module
+
+    # A cancelled id used to stay in cancelled_tests forever after its
+    # record was evicted: one leaked set entry per cancelled test for
+    # the life of the server.
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 1)
+    main_module.speed_tests.clear()
+    main_module.cancelled_tests.clear()
+    try:
+        main_module.speed_tests["cancelled-1"] = {
+            "test_id": "cancelled-1", "status": "cancelled", "progress": 50,
+            "result": None, "error": "Cancelled by user.",
+        }
+        main_module.cancelled_tests.add("cancelled-1")
+        main_module.speed_tests["completed-1"] = {
+            "test_id": "completed-1", "status": "completed", "progress": 100,
+            "result": None, "error": None,
+        }
+        with main_module.speed_tests_lock:
+            main_module._evict_old_tests()
+        assert "cancelled-1" not in main_module.speed_tests
+        assert "cancelled-1" not in main_module.cancelled_tests
+        assert "completed-1" in main_module.speed_tests
+    finally:
+        main_module.speed_tests.clear()
+        main_module.cancelled_tests.clear()
+
+
+def test_update_for_evicted_test_is_ignored_not_an_error() -> None:
+    import app.main as main_module
+
+    # A cancelled record can be evicted while its background thread is
+    # still running; its next progress update must be a no-op, not a
+    # KeyError escaping the worker thread.
+    main_module._update_test("no-such-test", status="completed", progress=100)
+    assert "no-such-test" not in main_module.speed_tests
+
+
+def test_queued_job_for_evicted_record_does_not_run(monkeypatch) -> None:
+    import app.main as main_module
+
+    # A job queued behind the executor whose record was evicted (only a
+    # cancelled record can be evicted while pending) must not run a
+    # full speed test whose result has nowhere to go.
+    called = []
+    monkeypatch.setattr(
+        "app.main.run_speed_test",
+        lambda progress_callback=None: called.append(True) or {"download_mbps": 1.0},
+    )
+    main_module._run_speed_test_job("no-such-test")
+    assert called == []
