@@ -26,6 +26,7 @@ app/
     js/app.js
 tests/
   test_api.py
+  test_speedtest_service.py
 main.py
 requirements.txt
 README.md
