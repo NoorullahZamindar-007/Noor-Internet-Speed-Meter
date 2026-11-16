@@ -58,6 +58,9 @@ MAX_ACTIVE_TESTS = 4
 # Retry-After header on 429 responses (RFC 7231 §7.1.3).
 RETRY_AFTER_SECONDS = 30
 ACTIVE_STATUSES = {"pending", "running"}
+# A record in one of these states is finished for good: no later update
+# may change it (see _update_test).
+TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 # A speed test normally takes 60-120 s and the frontend stops polling
 # after 10 minutes, but nothing bounded the server-side run: a hung test
 # stayed pending/running forever, and active records are never evicted,
@@ -80,6 +83,15 @@ def _update_test(test_id: str, **changes: Any) -> None:
         # raising KeyError out of the background thread.
         test = speed_tests.get(test_id)
         if test is None:
+            return
+        # A finished record must stay finished: after a timeout the
+        # orphan thread keeps running and its progress callbacks used
+        # to creep a failed record's progress up (to 100) even though
+        # the test had already failed — the stored record then
+        # disagreed with what the frontend had shown. The same guard
+        # covers a completed record's late callbacks and doubles the
+        # cancelled-tests check above.
+        if test["status"] in TERMINAL_STATUSES:
             return
         test.update(changes)
 

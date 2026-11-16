@@ -372,6 +372,40 @@ def test_update_for_evicted_test_is_ignored_not_an_error() -> None:
     assert "no-such-test" not in main_module.speed_tests
 
 
+def test_timed_out_test_ignores_late_progress_from_orphan_thread(monkeypatch) -> None:
+    import time
+
+    import app.main as main_module
+
+    # After a timeout the orphan thread keeps running: its progress
+    # callbacks used to creep the failed record's progress up to 100
+    # even though the test had already failed.
+    def fake_run_speed_test(progress_callback=None):
+        time.sleep(0.3)
+        if progress_callback:
+            progress_callback(100)
+        return {"download_mbps": 1.0, "upload_mbps": 1.0, "ping_ms": 1.0}
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    monkeypatch.setattr(main_module, "SPEED_TEST_TIMEOUT_SECONDS", 0.05)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["status"] == "failed"
+    assert data["error"] == "Speed test timed out."
+    assert data["progress"] == 10
+
+    # Let the orphan thread finish and report its late progress.
+    time.sleep(0.5)
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["status"] == "failed"
+    assert data["progress"] == 10
+    assert data["result"] is None
+
+
 def test_queued_job_for_evicted_record_does_not_run(monkeypatch) -> None:
     import app.main as main_module
 
