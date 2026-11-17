@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,12 +20,18 @@ from app.services.speedtest_service import run_speed_test
 
 APP_NAME = "Noor Internet Speed Meter"
 BASE_DIR = Path(__file__).resolve().parent
+# Completed results survive a restart: without this, a restart wiped the
+# in-memory store and the frontend's poll for a finished test 404d with
+# the misleading "server may have restarted" message. Gitignored: it is
+# local runtime state, not source.
+HISTORY_FILE = BASE_DIR / "speedtest_history.json"
 
 executor = ThreadPoolExecutor(max_workers=2)
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    _load_history()
     yield
     # Release the pool's threads on shutdown so reloads/restarts do not
     # leak threads or delay worker exit.
@@ -69,6 +77,78 @@ TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 SPEED_TEST_TIMEOUT_SECONDS = 300
 
 
+def _save_history() -> None:
+    """Persist the in-memory records so a restart does not wipe history.
+
+    Caller must hold speed_tests_lock. Best-effort and atomic (temp file
+    + os.replace): a read-only folder or a crash mid-save must never break
+    the request that triggered the save, and must never leave a
+    half-written file behind. Records are JSON-plain (str/int/dict/None),
+    so they serialize as-is.
+    """
+    payload = json.dumps(list(speed_tests.values()), indent=2)
+    tmp = HISTORY_FILE.with_name(f".{HISTORY_FILE.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, HISTORY_FILE)
+    except OSError:
+        pass
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _load_history() -> None:
+    """Restore persisted records at startup; in-flight tests cannot resume.
+
+    A record that was pending/running when the server stopped has no
+    thread behind it any more, so it is marked failed with a clear message
+    instead of staying active forever (active records are never evicted
+    and count toward MAX_ACTIVE_TESTS). A missing, corrupt, or
+    wrong-shaped file falls back to an empty history.
+    """
+    try:
+        raw = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, list):
+        return
+    with speed_tests_lock:
+        speed_tests.clear()
+        for item in raw[-MAX_STORED_TESTS:]:
+            if not isinstance(item, dict):
+                continue
+            test_id = item.get("test_id")
+            status = item.get("status")
+            if not isinstance(test_id, str) or status not in {
+                "pending",
+                "running",
+                "completed",
+                "failed",
+                "cancelled",
+            }:
+                continue
+            record: dict[str, Any] = {
+                "test_id": test_id,
+                "status": status,
+                "progress": item.get("progress")
+                if isinstance(item.get("progress"), int)
+                else 0,
+                "result": item.get("result")
+                if isinstance(item.get("result"), dict)
+                else None,
+                "error": item.get("error")
+                if isinstance(item.get("error"), str)
+                else None,
+            }
+            if status in ACTIVE_STATUSES:
+                record["status"] = "failed"
+                record["error"] = "Server restarted while this test was running."
+            speed_tests[test_id] = record
+
+
 def _update_test(test_id: str, **changes: Any) -> None:
     with speed_tests_lock:
         # A cancelled test stays cancelled: the background job's thread
@@ -94,6 +174,7 @@ def _update_test(test_id: str, **changes: Any) -> None:
         if test["status"] in TERMINAL_STATUSES:
             return
         test.update(changes)
+        _save_history()
 
 
 def _evict_old_tests() -> None:
@@ -199,6 +280,7 @@ def start_speedtest() -> dict[str, str]:
         # Dicts preserve insertion order: drop the oldest records first,
         # but never evict an active test (see _evict_old_tests).
         _evict_old_tests()
+        _save_history()
 
     try:
         executor.submit(_run_speed_test_job, test_id)
@@ -209,6 +291,7 @@ def start_speedtest() -> dict[str, str]:
         # consume one active slot and one history slot.
         with speed_tests_lock:
             speed_tests.pop(test_id, None)
+            _save_history()
         raise HTTPException(
             status_code=503,
             detail="Speed test service is shutting down. Please try again.",
@@ -236,6 +319,7 @@ def cancel_speedtest(test_id: str) -> dict[str, Any]:
             )
         cancelled_tests.add(test_id)
         test.update(status="cancelled", progress=test["progress"], error="Cancelled by user.")
+        _save_history()
         return dict(test)
 
 

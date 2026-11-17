@@ -5,7 +5,7 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def _clear_speed_tests():
+def _clear_speed_tests(monkeypatch, tmp_path):
     # Tests share the module-global speed_tests store; without this a
     # test asserting on initial/empty state can see records left by an
     # earlier test, depending on order or on running a subset.
@@ -13,6 +13,10 @@ def _clear_speed_tests():
 
     main_module.speed_tests.clear()
     main_module.cancelled_tests.clear()
+    # History is saved on every record change: point it at a temp file
+    # so test runs never write into the repo (and never read a real
+    # history file left by a previous run).
+    monkeypatch.setattr(main_module, "HISTORY_FILE", tmp_path / "speedtest_history.json")
     yield
     main_module.speed_tests.clear()
     main_module.cancelled_tests.clear()
@@ -419,3 +423,93 @@ def test_queued_job_for_evicted_record_does_not_run(monkeypatch) -> None:
     )
     main_module._run_speed_test_job("no-such-test")
     assert called == []
+
+
+def test_completed_history_survives_restart(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+    assert client.get(f"/api/speedtest/status/{test_id}").json()["status"] == "completed"
+
+    # Simulate a restart: drop the in-memory records and load from disk.
+    main_module.speed_tests.clear()
+    main_module._load_history()
+
+    response = client.get(f"/api/speedtest/status/{test_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["result"]["download_mbps"] == 50.25
+
+
+def test_running_test_is_failed_after_restart() -> None:
+    import app.main as main_module
+
+    # A test that was still running when the server stopped has no thread
+    # behind it any more: it must come back failed with a clear message,
+    # not stay "running" forever and hold an active slot.
+    main_module.speed_tests["running-1"] = {
+        "test_id": "running-1", "status": "running", "progress": 50,
+        "result": None, "error": None,
+    }
+    main_module._save_history()
+    main_module.speed_tests.clear()
+    main_module._load_history()
+
+    data = client.get("/api/speedtest/status/running-1").json()
+    assert data["status"] == "failed"
+    assert data["error"] == "Server restarted while this test was running."
+    assert data["progress"] == 50
+
+
+def test_corrupt_or_wrong_shaped_history_loads_empty() -> None:
+    import app.main as main_module
+
+    main_module.HISTORY_FILE.write_text("{not json", encoding="utf-8")
+    main_module._load_history()
+    assert main_module.speed_tests == {}
+
+    main_module.HISTORY_FILE.write_text('{"not": "a list"}', encoding="utf-8")
+    main_module._load_history()
+    assert main_module.speed_tests == {}
+
+    # Entries that are not objects, or lack a usable id/status, are
+    # skipped instead of crashing the load or landing as bad records.
+    main_module.HISTORY_FILE.write_text(
+        '[{"test_id": "ok-1", "status": "completed", "progress": 100, "result": null, "error": null},'
+        ' "junk", {"test_id": 42, "status": "completed"}]',
+        encoding="utf-8",
+    )
+    main_module._load_history()
+    assert list(main_module.speed_tests) == ["ok-1"]
+
+
+def test_history_load_keeps_only_the_newest_records(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_STORED_TESTS", 3)
+    for i in range(5):
+        main_module.speed_tests[f"test-{i}"] = {
+            "test_id": f"test-{i}", "status": "completed", "progress": 100,
+            "result": None, "error": None,
+        }
+    main_module._save_history()
+    main_module.speed_tests.clear()
+    main_module._load_history()
+
+    assert list(main_module.speed_tests) == ["test-2", "test-3", "test-4"]
