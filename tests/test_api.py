@@ -513,3 +513,40 @@ def test_history_load_keeps_only_the_newest_records(monkeypatch) -> None:
     main_module._load_history()
 
     assert list(main_module.speed_tests) == ["test-2", "test-3", "test-4"]
+
+
+def test_start_returns_503_when_executor_shut_down(monkeypatch) -> None:
+    import app.main as main_module
+
+    # The pool-shutdown branch of start_speedtest had zero coverage: the
+    # record must be dropped, not left "pending" forever holding an
+    # active slot and a history slot.
+    def _boom(fn, *a, **k):
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    monkeypatch.setattr(main_module.executor, "submit", _boom)
+
+    response = client.post("/api/speedtest/start")
+
+    assert response.status_code == 503
+    assert "shutting down" in response.json()["detail"]
+    assert main_module.speed_tests == {}
+
+
+def test_cancel_failed_speedtest_returns_409(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we cancel.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+    assert client.get(f"/api/speedtest/status/{test_id}").json()["status"] == "failed"
+
+    response = client.post(f"/api/speedtest/cancel/{test_id}")
+
+    assert response.status_code == 409
+    assert "already failed" in response.json()["detail"]
