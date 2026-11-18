@@ -71,6 +71,8 @@ http://127.0.0.1:8000
 
 The app creates a speed test job with a UUID, stores its status in memory, and runs the blocking `speedtest-cli` work in a thread. The browser polls the status endpoint once per second until the job completes or fails. Results are also persisted to `app/speedtest_history.json` (capped at 100 tests), so completed results survive a server restart; a test that was still running when the server stopped is marked failed on the next start.
 
+At most 4 tests may be active at once; starting another returns `429` with a `Retry-After: 30` header. A test that runs longer than 5 minutes is marked failed so it cannot wedge an active slot forever.
+
 Progress values are updated at these points:
 
 - 0 when created
