@@ -550,3 +550,40 @@ def test_cancel_failed_speedtest_returns_409(monkeypatch) -> None:
 
     assert response.status_code == 409
     assert "already failed" in response.json()["detail"]
+
+
+def test_history_load_drops_unusable_result_and_clamps_progress() -> None:
+    import app.main as main_module
+
+    # A hand-edited history file can hold a result whose fields are not
+    # numbers and a progress outside 0-100: both passed the old load
+    # checks, and the bad result then 500d the status endpoint on
+    # response-model validation. The bad result must be dropped (the
+    # frontend already handles a completed test with no result) and the
+    # progress clamped, so one bad record cannot break its endpoint.
+    # A bool progress is not an int for this purpose, and numeric
+    # strings in a good result still coerce, as through the API.
+    main_module.HISTORY_FILE.write_text(
+        '[{"test_id": "bad-1", "status": "completed", "progress": 500,'
+        ' "result": {"download_mbps": "abc", "upload_mbps": 1.0, "ping_ms": 1.0,'
+        ' "server_name": "s", "server_location": "l"}, "error": null},'
+        ' {"test_id": "bool-1", "status": "completed", "progress": true,'
+        ' "result": null, "error": null},'
+        ' {"test_id": "ok-1", "status": "completed", "progress": 100,'
+        ' "result": {"download_mbps": "50.25", "upload_mbps": 12.75, "ping_ms": 23.5,'
+        ' "server_name": "Example Server", "server_location": "City, Country"}, "error": null}]',
+        encoding="utf-8",
+    )
+    main_module._load_history()
+
+    bad = client.get("/api/speedtest/status/bad-1")
+    assert bad.status_code == 200
+    assert bad.json()["status"] == "completed"
+    assert bad.json()["progress"] == 100
+    assert bad.json()["result"] is None
+
+    assert client.get("/api/speedtest/status/bool-1").json()["progress"] == 0
+
+    ok = client.get("/api/speedtest/status/ok-1")
+    assert ok.status_code == 200
+    assert ok.json()["result"]["download_mbps"] == 50.25

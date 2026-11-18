@@ -13,9 +13,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from starlette.requests import Request
 
-from app.schemas import SpeedTestStartResponse, SpeedTestStatus
+from app.schemas import SpeedTestResult, SpeedTestStartResponse, SpeedTestStatus
 from app.services.speedtest_service import run_speed_test
 
 APP_NAME = "Noor Internet Speed Meter"
@@ -100,6 +101,35 @@ def _save_history() -> None:
             pass
 
 
+def _sanitize_progress(value: Any) -> int:
+    """Clamp a history-file progress value to a 0-100 percentage.
+
+    The history file is hand-editable: a value outside the range, a
+    float, or a bool (a bool is an int subclass) used to load as-is and
+    reach the API even though progress is a percentage.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, min(100, value))
+
+
+def _sanitize_result(value: Any) -> dict[str, Any] | None:
+    """Return a history-file result only if it fits the API schema.
+
+    A result dict with a non-numeric field passed the old "is it a
+    dict" check, loaded fine, and then 500d the status endpoint when
+    the response model rejected it. Validate it like the API does and
+    drop it when it does not fit, so one bad record cannot break its
+    own endpoint.
+    """
+    if not isinstance(value, dict):
+        return None
+    try:
+        return SpeedTestResult(**value).model_dump()
+    except ValidationError:
+        return None
+
+
 def _load_history() -> None:
     """Restore persisted records at startup; in-flight tests cannot resume.
 
@@ -133,12 +163,21 @@ def _load_history() -> None:
             record: dict[str, Any] = {
                 "test_id": test_id,
                 "status": status,
-                "progress": item.get("progress")
-                if isinstance(item.get("progress"), int)
-                else 0,
-                "result": item.get("result")
-                if isinstance(item.get("result"), dict)
-                else None,
+                # A hand-edited history file can carry a progress outside
+                # 0-100 (or a bool/float, which is not an int): it used to
+                # load as-is and reach the API, even though progress is
+                # a percentage. Clamp it; anything unusable becomes 0.
+                "progress": _sanitize_progress(item.get("progress")),
+                # Same class of problem for the result: a dict with a
+                # non-numeric field passed the old "is it a dict" check,
+                # loaded fine, and then 500d the status endpoint when
+                # the response model rejected it. Validate it like the
+                # API does and drop it when it does not fit, so one
+                # bad record cannot break its own endpoint — the
+                # frontend already handles a completed test with no
+                # result. Numeric strings still coerce, as they do
+                # through the API.
+                "result": _sanitize_result(item.get("result")),
                 "error": item.get("error")
                 if isinstance(item.get("error"), str)
                 else None,
