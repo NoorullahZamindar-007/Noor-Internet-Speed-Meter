@@ -134,6 +134,39 @@ def test_hung_speedtest_fails_after_timeout(monkeypatch) -> None:
     assert data["error"] == "Speed test timed out."
 
 
+def test_history_endpoint_lists_past_tests_newest_first(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the tests finish before we list.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    # Empty history lists nothing, and a failed run is listed too —
+    # history is the record of what happened, not only successes.
+    assert client.get("/api/speedtest/history").json() == []
+
+    first_id = client.post("/api/speedtest/start").json()["test_id"]
+    second_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    response = client.get("/api/speedtest/history")
+    assert response.status_code == 200
+    data = response.json()
+    assert [item["test_id"] for item in data] == [second_id, first_id]
+    assert all(item["status"] == "completed" for item in data)
+    assert data[0]["result"]["download_mbps"] == 50.25
+
+
 def test_unknown_speedtest_id_returns_404() -> None: 
     response = client.get("/api/speedtest/status/not-a-real-id") 
 

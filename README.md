@@ -66,6 +66,7 @@ http://127.0.0.1:8000
 | POST | `/api/speedtest/start` | Start a background speed test |
 | POST | `/api/speedtest/cancel/{test_id}` | Cancel a pending or running speed test |
 | GET | `/api/speedtest/status/{test_id}` | Read speed test status |
+| GET | `/api/speedtest/history` | List past speed tests, newest first |
 
 ## How It Works
 

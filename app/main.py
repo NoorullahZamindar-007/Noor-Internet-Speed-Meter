@@ -369,3 +369,14 @@ def speedtest_status(test_id: str) -> dict[str, Any]:
         if test is None:
             raise HTTPException(status_code=404, detail="Speed test not found")
         return dict(test)
+
+
+@app.get("/api/speedtest/history", response_model=list[SpeedTestStatus])
+def speedtest_history() -> list[dict[str, Any]]:
+    # History is persisted to disk, but until now the only read path was
+    # polling one status URL at a time: past results were unreachable
+    # without opening the history file. Newest first, under the same
+    # lock as the other endpoints; copies, so callers cannot mutate
+    # the store.
+    with speed_tests_lock:
+        return [dict(test) for test in reversed(list(speed_tests.values()))]
