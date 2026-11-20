@@ -70,7 +70,7 @@ function resetResults() {
   setProgress(0);
 }
 
-function finish() {
+function finish(completed = false) {
   pollingActive = false;
   startButton.disabled = false;
   cancelButton.disabled = true;
@@ -82,6 +82,17 @@ function finish() {
   if (elapsedTimer) {
     clearInterval(elapsedTimer);
     elapsedTimer = null;
+  }
+  // The elapsed timer is gone but its last "Elapsed time: N seconds"
+  // line is not: without this it sat under "Speed test completed."
+  // forever. A finished run reports its duration; any other ending
+  // restores the default hint.
+  if (startedAt !== null) {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    timeText.textContent = completed
+      ? `Completed in ${seconds} seconds.`
+      : "A full test usually takes 60-120 seconds.";
+    startedAt = null;
   }
 }
 
@@ -183,7 +194,7 @@ async function pollStatus(testId) {
       const serverLocation = data.result.server_location || "Unknown";
       serverResult.textContent = `${serverName} (${serverLocation})`;
       statusText.textContent = "Speed test completed.";
-      finish();
+      finish(true);
     }
   }
 

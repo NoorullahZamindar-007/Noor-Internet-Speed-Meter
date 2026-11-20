@@ -3,9 +3,15 @@
 import sys
 import types
 
+import pytest
 
-def _install_fake_speedtest(best_server, ping, download=50_000_000, upload=10_000_000):
-    """Install a fake ``speedtest`` module, then import the service fresh."""
+
+def _install_fake_speedtest(best_server, ping, download=50_000_000, upload=10_000_000, raise_on=None):
+    """Install a fake ``speedtest`` module, then import the service fresh.
+
+    raise_on names a step ("download", "upload", "best_server") whose
+    fake raises, to exercise the failure path.
+    """
     fake = types.ModuleType("speedtest")
 
     class FakeResults:
@@ -19,12 +25,18 @@ def _install_fake_speedtest(best_server, ping, download=50_000_000, upload=10_00
             self.results = results
 
         def get_best_server(self):
+            if raise_on == "best_server":
+                raise ConnectionError("no server reachable")
             return best_server
 
         def download(self):
+            if raise_on == "download":
+                raise ConnectionError("network down")
             return download
 
         def upload(self):
+            if raise_on == "upload":
+                raise ConnectionError("network down")
             return upload
 
     fake.Speedtest = FakeSpeedtest
@@ -134,3 +146,14 @@ def test_non_string_server_fields_are_coerced_not_crashed():
     assert result["server_name"] == "123"
     assert result["server_location"] == "456, 789"
     assert result["download_mbps"] == 50.0
+
+
+def test_speedtest_library_failure_is_wrapped_as_runtime_error():
+    # A failure inside the speedtest library is wrapped as
+    # RuntimeError("Speed test failed: ...") so the API can report it
+    # cleanly; no test made the fake raise, so the wrap was unpinned.
+    with pytest.raises(RuntimeError, match="Speed test failed: network down"):
+        _install_fake_speedtest(best_server={}, ping=10, raise_on="download")
+
+    with pytest.raises(RuntimeError, match="Speed test failed: no server reachable"):
+        _install_fake_speedtest(best_server={}, ping=10, raise_on="best_server")
