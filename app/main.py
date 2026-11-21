@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -125,9 +126,22 @@ def _sanitize_result(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     try:
-        return SpeedTestResult(**value).model_dump()
+        result = SpeedTestResult(**value).model_dump()
     except ValidationError:
         return None
+    # NaN and Infinity pass pydantic's float check, but they are not
+    # valid JSON: the status endpoint would serialize them as bare
+    # NaN/Infinity tokens, which the browser's response.json() rejects,
+    # so a completed test with a poisoned result looked like a
+    # transient poll failure instead of showing its record. Drop it
+    # like any other unusable result — json.loads accepts NaN/Infinity
+    # literals, so a hand-edited history file can carry them.
+    if not all(
+        math.isfinite(result[field])
+        for field in ("download_mbps", "upload_mbps", "ping_ms")
+    ):
+        return None
+    return result
 
 
 def _load_history() -> None:

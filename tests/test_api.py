@@ -620,3 +620,33 @@ def test_history_load_drops_unusable_result_and_clamps_progress() -> None:
     ok = client.get("/api/speedtest/status/ok-1")
     assert ok.status_code == 200
     assert ok.json()["result"]["download_mbps"] == 50.25
+
+
+def test_history_load_drops_non_finite_result() -> None:
+    import app.main as main_module
+
+    # NaN and Infinity pass pydantic's float check, but they are not
+    # valid JSON: the status endpoint would serialize them as bare
+    # NaN/Infinity tokens, which the browser's response.json() rejects,
+    # so a completed test with a poisoned result looked like a
+    # transient poll failure instead of showing its record. The result
+    # must be dropped like any other unusable one (the frontend already
+    # handles a completed test with no result). json.loads accepts
+    # NaN/Infinity literals, so a hand-edited history file can carry
+    # them even though the app itself never writes them.
+    main_module.HISTORY_FILE.write_text(
+        '[{"test_id": "nan-1", "status": "completed", "progress": 100,'
+        ' "result": {"download_mbps": NaN, "upload_mbps": 1.0, "ping_ms": 1.0,'
+        ' "server_name": "s", "server_location": "l"}, "error": null},'
+        ' {"test_id": "inf-1", "status": "completed", "progress": 100,'
+        ' "result": {"download_mbps": 1.0, "upload_mbps": Infinity, "ping_ms": 1.0,'
+        ' "server_name": "s", "server_location": "l"}, "error": null}]',
+        encoding="utf-8",
+    )
+    main_module._load_history()
+
+    for test_id in ("nan-1", "inf-1"):
+        response = client.get(f"/api/speedtest/status/{test_id}")
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed"
+        assert response.json()["result"] is None
