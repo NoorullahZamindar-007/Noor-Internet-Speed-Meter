@@ -193,3 +193,35 @@ button:disabled {
     width: 100%;
   }
 }
+
+.history {
+  margin-top: 28px;
+}
+
+.history h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.history-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-list li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.history-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}

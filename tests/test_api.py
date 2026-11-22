@@ -187,6 +187,10 @@ def test_home_exposes_progressbar_and_live_status_for_assistive_tech() -> None:
     # Status changes (running/completed/failed) should be announced.
     assert 'id="statusText"' in html
     assert 'aria-live="polite"' in html
+    # Past tests are listed on the page, filled in from the history
+    # endpoint by the frontend script.
+    assert 'id="historyList"' in html
+    assert 'id="historyEmpty"' in html
 
 
 def test_speedtest_history_is_capped(monkeypatch) -> None:

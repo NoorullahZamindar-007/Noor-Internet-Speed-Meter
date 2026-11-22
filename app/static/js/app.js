@@ -9,6 +9,8 @@ const downloadResult = document.getElementById("downloadResult");
 const uploadResult = document.getElementById("uploadResult");
 const pingResult = document.getElementById("pingResult");
 const serverResult = document.getElementById("serverResult");
+const historyList = document.getElementById("historyList");
+const historyEmpty = document.getElementById("historyEmpty");
 
 let pollTimer = null;
 let elapsedTimer = null;
@@ -94,6 +96,76 @@ function finish(completed = false) {
       : "A full test usually takes 60-120 seconds.";
     startedAt = null;
   }
+  // A completed run belongs in the past-tests list below the results:
+  // refresh it so the list shows the run that just finished without
+  // needing a page reload.
+  if (completed) {
+    loadHistory();
+  }
+}
+
+// Format a record's timestamp for the past-tests list: an ISO string
+// from the API, shown in the browser's local time. A missing or
+// unparseable value (an older record, a hand-edited history file)
+// yields no time instead of "Invalid Date".
+function formatHistoryTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+function renderHistory(tests) {
+  // Only completed tests with a result are worth listing; a failed or
+  // cancelled run has no metrics to show. The endpoint already returns
+  // newest first, so the first entries are the most recent runs.
+  const completed = tests.filter(
+    (test) => test && test.status === "completed" && test.result,
+  );
+  historyList.replaceChildren();
+  if (completed.length === 0) {
+    historyEmpty.hidden = false;
+    return;
+  }
+  historyEmpty.hidden = true;
+  for (const test of completed.slice(0, 10)) {
+    const item = document.createElement("li");
+    const result = test.result;
+    // Build the line with textContent, not innerHTML: the server name
+    // comes from speedtest server data, so it must never be parsed as
+    // markup.
+    const serverName = result.server_name || "Unknown";
+    const serverLocation = result.server_location || "Unknown";
+    const when = formatHistoryTime(test.finished_at || test.started_at);
+    item.textContent =
+      `${fmtMetric(result.download_mbps)} Mbps down · ` +
+      `${fmtMetric(result.upload_mbps)} Mbps up · ` +
+      `${fmtMetric(result.ping_ms)} ms ping — ` +
+      `${serverName} (${serverLocation})` +
+      (when ? ` · ${when}` : "");
+    historyList.appendChild(item);
+  }
+}
+
+async function loadHistory() {
+  // Past results live behind /api/speedtest/history, but the page
+  // never showed them: a completed test vanished from the page as
+  // soon as a new one started. A failed load leaves the previous
+  // list (or the empty note) in place instead of wiping it.
+  let response;
+  try {
+    response = await fetch("/api/speedtest/history");
+  } catch (_) {
+    return;
+  }
+  if (!response.ok) return;
+  let tests;
+  try {
+    tests = await response.json();
+  } catch (_) {
+    return;
+  }
+  if (!Array.isArray(tests)) return;
+  renderHistory(tests);
 }
 
 function startElapsedTimer() {
@@ -306,3 +378,7 @@ startButton.addEventListener("click", async () => {
     finish();
   }
 });
+
+// Show past tests as soon as the page loads, so results from earlier
+// runs are visible without starting a new test.
+loadHistory();
