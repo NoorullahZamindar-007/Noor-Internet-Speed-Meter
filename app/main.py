@@ -5,6 +5,7 @@ import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -102,6 +103,23 @@ def _save_history() -> None:
             pass
 
 
+def _now_iso() -> str:
+    """Current UTC time as an ISO 8601 string for record timestamps."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sanitize_timestamp(value: Any) -> str | None:
+    """Keep a history-file timestamp only if it is a string.
+
+    A hand-edited history file can carry a number, a list, or any
+    other JSON value here; the API schema expects a string, so
+    anything else would 500 the status endpoint for that record.
+    The format itself is not validated — a bad string still parses
+    as a string and the frontend skips dates it cannot parse.
+    """
+    return value if isinstance(value, str) else None
+
+
 def _sanitize_progress(value: Any) -> int:
     """Clamp a history-file progress value to a 0-100 percentage.
 
@@ -195,6 +213,8 @@ def _load_history() -> None:
                 "error": item.get("error")
                 if isinstance(item.get("error"), str)
                 else None,
+                "started_at": _sanitize_timestamp(item.get("started_at")),
+                "finished_at": _sanitize_timestamp(item.get("finished_at")),
             }
             if status in ACTIVE_STATUSES:
                 record["status"] = "failed"
@@ -226,6 +246,13 @@ def _update_test(test_id: str, **changes: Any) -> None:
         # cancelled-tests check above.
         if test["status"] in TERMINAL_STATUSES:
             return
+        # A record that reaches a terminal state is finished for good:
+        # stamp when it finished so the history can say when a past
+        # test ran. Only stamp once — a second terminal update (from
+        # a late callback that slipped past the guard above) must not
+        # move the finish time.
+        if changes.get("status") in TERMINAL_STATUSES and test.get("finished_at") is None:
+            changes["finished_at"] = _now_iso()
         test.update(changes)
         _save_history()
 
@@ -329,6 +356,8 @@ def start_speedtest() -> dict[str, str]:
             "progress": 0,
             "result": None,
             "error": None,
+            "started_at": _now_iso(),
+            "finished_at": None,
         }
         # Dicts preserve insertion order: drop the oldest records first,
         # but never evict an active test (see _evict_old_tests).
@@ -371,7 +400,12 @@ def cancel_speedtest(test_id: str) -> dict[str, Any]:
                 detail=f"Speed test is already {test['status']} and cannot be cancelled.",
             )
         cancelled_tests.add(test_id)
-        test.update(status="cancelled", progress=test["progress"], error="Cancelled by user.")
+        test.update(
+            status="cancelled",
+            progress=test["progress"],
+            error="Cancelled by user.",
+            finished_at=_now_iso(),
+        )
         _save_history()
         return dict(test)
 

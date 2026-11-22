@@ -650,3 +650,86 @@ def test_history_load_drops_non_finite_result() -> None:
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
         assert response.json()["result"] is None
+
+
+def test_started_test_carries_start_timestamp(monkeypatch) -> None:
+    import app.main as main_module
+
+    # The job never runs (executor mocked to a no-op): the record must
+    # still carry when it started, and no finish time yet.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["started_at"]
+    assert data["finished_at"] is None
+
+
+def test_completed_test_carries_finish_timestamp(monkeypatch) -> None:
+    import app.main as main_module
+
+    def fake_run_speed_test(progress_callback=None):
+        if progress_callback:
+            progress_callback(100)
+        return {
+            "download_mbps": 50.25,
+            "upload_mbps": 12.75,
+            "ping_ms": 23.5,
+            "server_name": "Example Server",
+            "server_location": "City, Country",
+        }
+
+    monkeypatch.setattr("app.main.run_speed_test", fake_run_speed_test)
+    # Run the background job inline so the test finishes before we poll.
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: fn(*a, **k))
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["status"] == "completed"
+    assert data["started_at"]
+    # The finish time is stamped when the record turns completed, so
+    # it must not be earlier than the start.
+    assert data["finished_at"] and data["finished_at"] >= data["started_at"]
+
+
+def test_cancelled_test_carries_finish_timestamp(monkeypatch) -> None:
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module.executor, "submit", lambda fn, *a, **k: None)
+
+    test_id = client.post("/api/speedtest/start").json()["test_id"]
+    assert client.post(f"/api/speedtest/cancel/{test_id}").status_code == 200
+
+    data = client.get(f"/api/speedtest/status/{test_id}").json()
+    assert data["status"] == "cancelled"
+    assert data["started_at"]
+    assert data["finished_at"] and data["finished_at"] >= data["started_at"]
+
+
+def test_history_load_keeps_valid_timestamps_and_drops_bad_ones() -> None:
+    import app.main as main_module
+
+    # A hand-edited history file can carry a non-string timestamp; the
+    # API schema expects a string, so anything else would 500 the
+    # status endpoint for that record. Valid strings load as-is.
+    main_module.HISTORY_FILE.write_text(
+        '[{"test_id": "ts-ok", "status": "completed", "progress": 100,'
+        ' "result": null, "error": null,'
+        ' "started_at": "2026-11-22T02:00:00+00:00",'
+        ' "finished_at": "2026-11-22T02:01:30+00:00"},'
+        ' {"test_id": "ts-bad", "status": "completed", "progress": 100,'
+        ' "result": null, "error": null,'
+        ' "started_at": 12345, "finished_at": ["not", "a", "string"]}]',
+        encoding="utf-8",
+    )
+    main_module._load_history()
+
+    ok = client.get("/api/speedtest/status/ts-ok").json()
+    assert ok["started_at"] == "2026-11-22T02:00:00+00:00"
+    assert ok["finished_at"] == "2026-11-22T02:01:30+00:00"
+
+    bad = client.get("/api/speedtest/status/ts-bad").json()
+    assert bad["started_at"] is None
+    assert bad["finished_at"] is None

@@ -24,3 +24,10 @@ class SpeedTestStatus(BaseModel):
     progress: int
     result: SpeedTestResult | None = None
     error: str | None = None
+    # UTC ISO 8601 timestamps: when the test was started, and when it
+    # reached a terminal state (completed, failed, or cancelled). The
+    # history endpoint used to return records with no time on them at
+    # all, so a past result could not be told apart from another run
+    # of the same test.
+    started_at: str | None = None
+    finished_at: str | None = None
