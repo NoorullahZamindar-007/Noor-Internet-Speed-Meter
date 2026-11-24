@@ -193,6 +193,21 @@ def test_home_exposes_progressbar_and_live_status_for_assistive_tech() -> None:
     assert 'id="historyEmpty"' in html
 
 
+def test_home_static_assets_serve() -> None:
+    # The page links its stylesheet and script from /static: if either
+    # file goes missing the page still returns 200 (and the home test
+    # above still passes) while rendering unstyled and inert, so assert
+    # the assets themselves serve.
+    css = client.get("/static/css/styles.css")
+    assert css.status_code == 200
+    assert "text/css" in css.headers["content-type"]
+    assert ".progress-bar" in css.text
+    js = client.get("/static/js/app.js")
+    assert js.status_code == 200
+    assert "javascript" in js.headers["content-type"]
+    assert "loadHistory" in js.text
+
+
 def test_speedtest_history_is_capped(monkeypatch) -> None:
     import app.main as main_module
 
