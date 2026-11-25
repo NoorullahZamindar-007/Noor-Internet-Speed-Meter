@@ -52,6 +52,8 @@ Or:
 python main.py
 ```
 
+By default `python main.py` runs without auto-reload; set `NOOR_SPEEDMETER_RELOAD=1` to enable it while developing.
+
 Open:
 
 ```text
