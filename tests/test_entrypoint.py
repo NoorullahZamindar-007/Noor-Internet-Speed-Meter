@@ -39,3 +39,29 @@ def test_entrypoint_reload_opt_in_accepts_true(monkeypatch):
     monkeypatch.setenv("NOOR_SPEEDMETER_RELOAD", "true")
     entrypoint.main()
     assert calls["reload"] is True
+
+
+def test_entrypoint_host_and_port_overrides(monkeypatch):
+    # Host and port used to be hardcoded, so the documented entry
+    # point had no way to run on another port — the README's only
+    # workaround was to abandon `python main.py` for uvicorn directly.
+    calls = {}
+    monkeypatch.setattr(
+        entrypoint.uvicorn, "run", lambda *args, **kwargs: calls.update(kwargs)
+    )
+    monkeypatch.setenv("NOOR_SPEEDMETER_HOST", "0.0.0.0")
+    monkeypatch.setenv("NOOR_SPEEDMETER_PORT", "8001")
+    entrypoint.main()
+    assert calls["host"] == "0.0.0.0"
+    assert calls["port"] == 8001
+
+
+def test_entrypoint_non_numeric_port_falls_back_to_8000(monkeypatch):
+    # A typo in NOOR_SPEEDMETER_PORT must not crash startup.
+    calls = {}
+    monkeypatch.setattr(
+        entrypoint.uvicorn, "run", lambda *args, **kwargs: calls.update(kwargs)
+    )
+    monkeypatch.setenv("NOOR_SPEEDMETER_PORT", "not-a-port")
+    entrypoint.main()
+    assert calls["port"] == 8000

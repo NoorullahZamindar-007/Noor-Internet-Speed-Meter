@@ -13,7 +13,13 @@ def main() -> None:
         "true",
         "yes",
     }
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=reload)
+    host = os.getenv("NOOR_SPEEDMETER_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    # A non-numeric port falls back to 8000 instead of crashing startup.
+    try:
+        port = int(os.getenv("NOOR_SPEEDMETER_PORT", "8000"))
+    except ValueError:
+        port = 8000
+    uvicorn.run("app.main:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":
