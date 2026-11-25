@@ -30,6 +30,7 @@ tests/
   test_speedtest_service.py
 main.py
 requirements.txt
+requirements-dev.txt  # test-only dependencies (pytest, httpx)
 README.md
 .gitignore
 ```
@@ -43,7 +44,7 @@ pip install -r requirements.txt
 ## Run The App
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app
 ```
 
 Or:
@@ -52,7 +53,7 @@ Or:
 python main.py
 ```
 
-By default `python main.py` runs without auto-reload; set `NOOR_SPEEDMETER_RELOAD=1` to enable it while developing.
+By default `python main.py` runs without auto-reload; set `NOOR_SPEEDMETER_RELOAD=1` to enable it while developing. Host and port default to `127.0.0.1:8000` and can be changed with `NOOR_SPEEDMETER_HOST` and `NOOR_SPEEDMETER_PORT`.
 
 Open:
 
@@ -88,6 +89,7 @@ Progress values are updated at these points:
 ## Testing
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 
@@ -97,7 +99,7 @@ The tests mock the speed test function, so they do not use your network connecti
 
 - If `speedtest-cli` fails, check your internet connection and try again.
 - If the app does not start, reinstall dependencies with `pip install -r requirements.txt`.
-- If port `8000` is busy, run `uvicorn app.main:app --reload --port 8001`.
+- If port `8000` is busy, run `uvicorn app.main:app --port 8001` (or `NOOR_SPEEDMETER_PORT=8001 python main.py`).
 
 ## Future Improvements
 
