@@ -53,7 +53,7 @@ Or:
 python main.py
 ```
 
-By default `python main.py` runs without auto-reload; set `NOOR_SPEEDMETER_RELOAD=1` to enable it while developing. Host and port default to `127.0.0.1:8000` and can be changed with `NOOR_SPEEDMETER_HOST` and `NOOR_SPEEDMETER_PORT`.
+By default `python main.py` runs without auto-reload; set `NOOR_SPEEDMETER_RELOAD=1` to enable it while developing. Host and port default to `127.0.0.1:8000` and can be changed with `NOOR_SPEEDMETER_HOST` and `NOOR_SPEEDMETER_PORT`; a non-numeric or out-of-range port falls back to `8000` instead of crashing startup.
 
 Open:
 

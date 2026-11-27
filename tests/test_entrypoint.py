@@ -65,3 +65,17 @@ def test_entrypoint_non_numeric_port_falls_back_to_8000(monkeypatch):
     monkeypatch.setenv("NOOR_SPEEDMETER_PORT", "not-a-port")
     entrypoint.main()
     assert calls["port"] == 8000
+
+
+def test_entrypoint_out_of_range_port_falls_back_to_8000(monkeypatch):
+    # int() accepts "99999" and "0", but uvicorn raises on a port
+    # outside 1-65535, so an out-of-range value used to crash startup
+    # instead of falling back like a non-numeric one does.
+    calls = {}
+    monkeypatch.setattr(
+        entrypoint.uvicorn, "run", lambda *args, **kwargs: calls.update(kwargs)
+    )
+    for bad_port in ("99999", "65536", "0", "-1"):
+        monkeypatch.setenv("NOOR_SPEEDMETER_PORT", bad_port)
+        entrypoint.main()
+        assert calls["port"] == 8000
