@@ -757,3 +757,21 @@ def test_history_load_keeps_valid_timestamps_and_drops_bad_ones() -> None:
     bad = client.get("/api/speedtest/status/ts-bad").json()
     assert bad["started_at"] is None
     assert bad["finished_at"] is None
+
+
+def test_status_schema_rejects_progress_outside_0_to_100() -> None:
+    import pytest
+
+    from app.schemas import SpeedTestStatus
+    from pydantic import ValidationError
+
+    # Progress is a percentage: the producers clamp it and history
+    # loading clamps it too, but the schema is the API's contract —
+    # an out-of-range value must fail validation here instead of
+    # reaching a client as "150%".
+    with pytest.raises(ValidationError):
+        SpeedTestStatus(test_id="x", status="running", progress=150)
+    with pytest.raises(ValidationError):
+        SpeedTestStatus(test_id="x", status="running", progress=-1)
+    assert SpeedTestStatus(test_id="x", status="running", progress=100).progress == 100
+    assert SpeedTestStatus(test_id="x", status="pending", progress=0).progress == 0

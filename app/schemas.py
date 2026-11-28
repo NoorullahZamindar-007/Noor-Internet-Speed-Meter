@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SpeedTestResult(BaseModel):
@@ -21,7 +21,10 @@ class SpeedTestStartResponse(BaseModel):
 class SpeedTestStatus(BaseModel):
     test_id: str
     status: Literal["pending", "running", "completed", "failed", "cancelled"]
-    progress: int
+    # Progress is a percentage: the producers clamp it, but the schema
+    # is the API's contract — an out-of-range value must fail
+    # validation here instead of reaching a client as "150%".
+    progress: int = Field(ge=0, le=100)
     result: SpeedTestResult | None = None
     error: str | None = None
     # UTC ISO 8601 timestamps: when the test was started, and when it
