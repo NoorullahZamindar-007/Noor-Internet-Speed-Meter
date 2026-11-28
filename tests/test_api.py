@@ -191,6 +191,11 @@ def test_home_exposes_progressbar_and_live_status_for_assistive_tech() -> None:
     # endpoint by the frontend script.
     assert 'id="historyList"' in html
     assert 'id="historyEmpty"' in html
+    # The past-tests chart is a canvas (labelled, not read aloud — the
+    # list above stays the accessible record).
+    assert 'id="historyChart"' in html
+    assert 'role="img"' in html
+    assert 'id="historyChartLegend"' in html
 
 
 def test_home_static_assets_serve() -> None:

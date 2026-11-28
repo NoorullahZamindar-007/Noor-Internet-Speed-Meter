@@ -11,6 +11,8 @@ const pingResult = document.getElementById("pingResult");
 const serverResult = document.getElementById("serverResult");
 const historyList = document.getElementById("historyList");
 const historyEmpty = document.getElementById("historyEmpty");
+const historyChart = document.getElementById("historyChart");
+const historyChartLegend = document.getElementById("historyChartLegend");
 
 let pollTimer = null;
 let elapsedTimer = null;
@@ -114,6 +116,54 @@ function formatHistoryTime(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
 }
 
+function renderHistoryChart(tests) {
+  // A simple bar chart of past speeds, drawn on a canvas with no
+  // dependencies: one pair of bars (download, upload) per completed
+  // test, oldest to newest, so a trend across runs is visible at a
+  // glance instead of only in the list below. The list stays the
+  // accessible record — the canvas is labelled, not read aloud.
+  if (!historyChart || !historyChartLegend) return;
+  const context = historyChart.getContext("2d");
+  if (!context) return;
+  const completed = tests
+    .filter((test) => test && test.status === "completed" && test.result)
+    .slice(0, 10)
+    .reverse();
+  const width = historyChart.width;
+  const height = historyChart.height;
+  context.clearRect(0, 0, width, height);
+  if (completed.length === 0) {
+    historyChart.hidden = true;
+    historyChartLegend.hidden = true;
+    return;
+  }
+  historyChart.hidden = false;
+  historyChartLegend.hidden = false;
+  const values = completed.flatMap((test) => [
+    Number(test.result.download_mbps) || 0,
+    Number(test.result.upload_mbps) || 0,
+  ]);
+  // Guard the scale against a non-numeric or all-zero set: without the
+  // Math.max(1, ...) floor a 0 Mbps run would divide by zero and draw
+  // nothing (or NaN heights).
+  const maxValue = Math.max(1, ...values);
+  const plotHeight = height - 8;
+  const groupWidth = width / completed.length;
+  const barWidth = Math.max(4, groupWidth / 4);
+  completed.forEach((test, index) => {
+    const groupX = index * groupWidth;
+    const downloadHeight = ((Number(test.result.download_mbps) || 0) / maxValue) * plotHeight;
+    const uploadHeight = ((Number(test.result.upload_mbps) || 0) / maxValue) * plotHeight;
+    context.fillStyle = "#0f8b8d";
+    context.fillRect(groupX + groupWidth / 2 - barWidth - 2, height - downloadHeight, barWidth, downloadHeight);
+    context.fillStyle = "#5aa469";
+    context.fillRect(groupX + groupWidth / 2 + 2, height - uploadHeight, barWidth, uploadHeight);
+  });
+  // Baseline so a flat (all-zero) chart still reads as a chart, not a blank canvas.
+  context.fillStyle = "#dfe5ef";
+  context.fillRect(0, height - 1, width, 1);
+}
+
 function renderHistory(tests) {
   // Only completed tests with a result are worth listing; a failed or
   // cancelled run has no metrics to show. The endpoint already returns
@@ -122,6 +172,7 @@ function renderHistory(tests) {
     (test) => test && test.status === "completed" && test.result,
   );
   historyList.replaceChildren();
+  renderHistoryChart(tests);
   if (completed.length === 0) {
     historyEmpty.hidden = false;
     return;

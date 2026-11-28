@@ -225,3 +225,21 @@ button:disabled {
   padding-top: 0;
   border-top: 0;
 }
+
+.history-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 16px;
+}
+
+.history-chart[hidden],
+.history-chart-legend[hidden] {
+  display: none;
+}
+
+.history-chart-legend {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

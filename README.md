@@ -10,6 +10,7 @@ Noor Internet Speed Meter is a FastAPI web app for checking internet download sp
 - Live progress polling from the browser
 - Download, upload, ping, and server result cards
 - Past test results listed on the page, newest first
+- Bar chart of download/upload speeds across past tests
 - Basic API tests that do not run a real speed test
 
 ## Project Structure
@@ -100,7 +101,3 @@ The tests mock the speed test function, so they do not use your network connecti
 - If `speedtest-cli` fails, check your internet connection and try again.
 - If the app does not start, reinstall dependencies with `pip install -r requirements.txt`.
 - If port `8000` is busy, run `uvicorn app.main:app --port 8001` (or `NOOR_SPEEDMETER_PORT=8001 python main.py`).
-
-## Future Improvements
-
-- Add charts for repeated tests
